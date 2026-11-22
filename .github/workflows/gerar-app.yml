@@ -50,7 +50,8 @@ jobs:
           rsvg-convert -w 1024 -h 1024 icon.svg -o assets/icon-only.png
           sed 's#<rect[^>]*/>##' icon.svg > /tmp/fg.svg
           rsvg-convert -w 1024 -h 1024 /tmp/fg.svg -o assets/icon-foreground.png
-          convert -size 1024x1024 xc:'#1F4D3A' assets/icon-background.png
+          echo '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" fill="#1F4D3A"/></svg>' > /tmp/bg.svg
+          rsvg-convert -w 1024 -h 1024 /tmp/bg.svg -o assets/icon-background.png
           npx cap add android
           npx @capacitor/assets generate --android --iconBackgroundColor "#1F4D3A" --iconBackgroundColorDark "#1F4D3A" --splashBackgroundColor "#1F4D3A" --splashBackgroundColorDark "#1F4D3A" || echo "Usando icones padrao"
           npx cap sync android
