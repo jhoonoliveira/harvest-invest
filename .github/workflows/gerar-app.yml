@@ -47,13 +47,15 @@ jobs:
           cp node_modules/pdfjs-dist/build/pdf.worker.min.js www/lib/
           cp node_modules/xlsx/dist/xlsx.full.min.js www/lib/
           sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin zip
-          rsvg-convert -w 1024 -h 1024 icon.svg -o assets/icon-only.png
-          sed 's#<rect[^>]*/>##' icon.svg > /tmp/fg.svg
-          rsvg-convert -w 1024 -h 1024 /tmp/fg.svg -o assets/icon-foreground.png
-          echo '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" fill="#1F4D3A"/></svg>' > /tmp/bg.svg
-          rsvg-convert -w 1024 -h 1024 /tmp/bg.svg -o assets/icon-background.png
           npx cap add android
-          npx @capacitor/assets generate --android --iconBackgroundColor "#1F4D3A" --iconBackgroundColorDark "#1F4D3A" --splashBackgroundColor "#1F4D3A" --splashBackgroundColorDark "#1F4D3A" || echo "Usando icones padrao"
+          RES=android/app/src/main/res
+          for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
+            n=${d%%:*}; r=${d#*:}; ic=${r%%:*}; fg=${r#*:}
+            rsvg-convert -w $ic -h $ic icon.svg -o $RES/mipmap-$n/ic_launcher.png
+            rsvg-convert -w $ic -h $ic icon-round.svg -o $RES/mipmap-$n/ic_launcher_round.png
+            rsvg-convert -w $fg -h $fg icon-foreground.svg -o $RES/mipmap-$n/ic_launcher_foreground.png
+          done
+          sed -i 's/#FFFFFF/#1F4D3A/I' $RES/values/ic_launcher_background.xml
           npx cap sync android
           sed -i "s/versionCode 1$/versionCode ${GITHUB_RUN_NUMBER}/" android/app/build.gradle
           sed -i "s/versionName \"1.0\"/versionName \"${VERSAO}\"/" android/app/build.gradle
