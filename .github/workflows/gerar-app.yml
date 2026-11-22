@@ -48,7 +48,9 @@ jobs:
           cp node_modules/xlsx/dist/xlsx.full.min.js www/lib/
           sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin zip
           rsvg-convert -w 1024 -h 1024 icon.svg -o assets/icon-only.png
-          cp assets/icon-only.png assets/icon-foreground.png
+          sed 's#<rect[^>]*/>##' icon.svg > /tmp/fg.svg
+          rsvg-convert -w 1024 -h 1024 /tmp/fg.svg -o assets/icon-foreground.png
+          convert -size 1024x1024 xc:'#1F4D3A' assets/icon-background.png
           npx cap add android
           npx @capacitor/assets generate --android --iconBackgroundColor "#1F4D3A" --iconBackgroundColorDark "#1F4D3A" --splashBackgroundColor "#1F4D3A" --splashBackgroundColorDark "#1F4D3A" || echo "Usando icones padrao"
           npx cap sync android
