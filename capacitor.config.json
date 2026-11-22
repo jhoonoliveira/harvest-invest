@@ -1,0 +1,11 @@
+{
+  "appId": "br.com.jhoon.harvestinvest",
+  "appName": "Harvest Invest",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "CapacitorUpdater": { "autoUpdate": false, "resetWhenUpdate": false },
+    "SplashScreen": { "launchShowDuration": 0 }
+  }
+}

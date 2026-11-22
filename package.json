@@ -1,0 +1,19 @@
+{
+  "name": "harvest-invest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Harvest Invest - controle de dividendos de ações e FIIs (app pessoal, offline, sem servidor)",
+  "dependencies": {
+    "@capacitor/android": "6.2.0",
+    "@capacitor/cli": "6.2.0",
+    "@capacitor/core": "6.2.0",
+    "@capacitor/filesystem": "6.0.2",
+    "@capacitor/share": "6.0.3",
+    "@capgo/capacitor-updater": "6.14.0",
+    "pdfjs-dist": "3.11.174",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5"
+  }
+}
