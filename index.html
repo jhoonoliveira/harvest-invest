@@ -73,9 +73,9 @@ h3{font-size:16px;margin:0 0 6px}
 .stalk .m{font-size:11px;margin-top:4px;opacity:.8}
 .stalk.cur .m{opacity:1;font-weight:600;color:var(--grain-soft)}
 .stalk.cur .b{outline:2px solid var(--grain-soft);outline-offset:2px}
-.heroGrid{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 10px;align-items:center;font-size:13px;margin-top:8px}
-.heroGrid span{display:inline-flex;align-items:center;gap:5px;opacity:.9}
-.heroGrid b{font-weight:600}
+.heroGrid{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:8px}
+.heroGrid .hp{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.heroGrid b{font-weight:600;margin-left:3px}
 .stalk.cur .b{outline:2px solid #F4E2A0}
 .legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;margin-top:10px;opacity:.9}
 .legend span{display:inline-flex;align-items:center;gap:5px}
@@ -630,7 +630,7 @@ function vInicio(){
   <section class="hero">
     <div class="lbl">${mLbl(sel)}/${sel.slice(2,4)}${sel===cur?' · mês atual':sel<cur?' · já passou':''}</div>
     <div class="big num">${brl(v('recebido')+v('provisionado')+v('anunciado')+v('projetado'))}</div>
-    ${(()=>{const P=[['recebido','Recebido','#E9C85A'],['provisionado','Provisionado','#F4E2A0'],['anunciado','Anunciado','rgba(242,246,239,.55)'],['projetado','Projetado','rgba(242,246,239,.22)']].filter(x=>v(x[0])>0.005);return P.length?`<div class="heroGrid">${P.map(x=>`<span><i class="dot" style="background:${x[2]}"></i>${x[1]}</span><b class="num">${brl(v(x[0]))}</b>`).join('')}</div>`:`<div class="sub">Nenhum provento neste mês.</div>`})()}
+    ${(()=>{const P=[['recebido','Recebido','#E9C85A'],['provisionado','Provisionado','#F4E2A0'],['anunciado','Anunciado','rgba(242,246,239,.55)'],['projetado','Projetado','rgba(242,246,239,.22)']].filter(x=>v(x[0])>0.005);return P.length?`<div class="heroGrid">${P.map(x=>`<span class="hp"><i class="dot" style="background:${x[2]}"></i>${x[1]} <b class="num">${brl(v(x[0]))}</b></span>`).join('')}</div>`:`<div class="sub">Nenhum provento neste mês.</div>`})()}
     <button class="btn ghost" id="verMesLista" style="color:var(--field-ink);padding:6px 0;opacity:.9">Ver os pagamentos de ${mLbl(sel)} ›</button>
     <div class="stalks">${stalks}</div>
     <div class="legend">
