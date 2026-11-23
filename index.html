@@ -320,7 +320,7 @@ function logo(t,tam=''){
 }
 // cotação: online (brapi) ou corrigida por você; sem isso, mostra o último preço pago e avisa
 function cotacaoDe(t){const c=(S.cotacoes||{})[t];if(c)return c;const u=S.ops.filter(o=>o.t===t).sort((a,b)=>a.d<b.d?1:-1)[0];return u?{p:u.p,d:u.d,fonte:'ultima'}:{p:0,d:null,fonte:'nenhuma'}}
-function cotAtual(c){return c.fonte==='brapi'||c.fonte==='manual'}
+function cotAtual(c){return c.fonte==='brapi'||c.fonte==='yahoo'||c.fonte==='manual'}
 function ativo(t){const b=ATIVOS[t]||{};const fii=(S.tipos&&S.tipos[t])?S.tipos[t]==='fii':(b.tipo?b.tipo==='fii':/11$/.test(t));const c=cotacaoDe(t);
   return {nome:(S.nomes&&S.nomes[t])||b.nome||t,tipo:fii?'fii':'acao',setor:b.setor||(fii?'FII (a classificar)':'Ações (a classificar)'),cnpj:b.cnpj||'—',cot:c.p,cotFonte:c.fonte,cotData:c.d}}
 // proventos por cota nos últimos 12 meses (dados da B3; um pagamento por data, mesmo se dividido entre corretoras)
@@ -664,8 +664,8 @@ function vCarteira(){
     const yoc=c.custo?prov12.reduce((s,e)=>s+e.liq,0)/c.custo*100:0;
     const vpc=provPorCota12m(c.t);
     const dy=c.cot?vpc/c.cot*100:0;
-    return `<button class="item" data-ativo="${c.t}" data-busca="${esc((c.t+' '+c.nome).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''))}">${logo(c.t)}<div class="flex1"><div class="tk">${c.t}</div><div class="small"><b class="num">${qtd(Math.round(c.q*1000)/1000)}</b> cota${c.q===1?'':'s'} · PM R$ ${S.privado?'••':nf2.format(c.pm)}</div><div class="small muted ellip">${esc(c.nome)}</div></div>
-    <div class="right"><div class="num">${brl(c.valor)}</div><div class="small ${cotAtual(cotacaoDe(c.t))?'muted':''}" style="${cotAtual(cotacaoDe(c.t))?'':'color:var(--warn)'}">${cotAtual(cotacaoDe(c.t))?'R$ '+nf2.format(c.cot):'sem cotação atual'} · DY ${pct(dy)}</div><div class="small muted">YoC ${pct(yoc)}</div></div></button>`}).join('')}</div>
+    return `<button class="item" data-ativo="${c.t}" data-busca="${esc((c.t+' '+c.nome).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''))}">${logo(c.t)}<div class="flex1"><div class="tk">${c.t}</div><div class="small"><b class="num">${qtd(Math.round(c.q*1000)/1000)}</b> cota${c.q===1?'':'s'} · PM R$ ${S.privado?'••':nf2.format(c.pm)}</div><div class="small ${cotAtual(cotacaoDe(c.t))?'muted':''}" style="${cotAtual(cotacaoDe(c.t))?'':'color:var(--warn)'}">${cotAtual(cotacaoDe(c.t))?'Cotação R$ '+nf2.format(c.cot):'sem cotação atual'} · DY ${pct(dy)} · YoC ${pct(yoc)}</div><div class="small muted ellip">${esc(c.nome)}</div></div>
+    <div class="right">${(()=>{const r=c.valor-c.custo,pc=c.custo?r/c.custo*100:0,cor=r>=0?'var(--ok)':'var(--bad)';return `<div class="num"><b>${brl(c.valor)}</b></div><div class="small muted num">aplicado ${brl(c.custo)}</div><div class="small num" style="color:${cor}">${r>=0?'+':'−'}${brl(Math.abs(r))}</div><div class="small num" style="color:${cor}">${r>=0?'+':'−'}${pct(Math.abs(pc))}</div>`})()}</div></button>`}).join('')}</div>
   <p class="small muted">Peso por setor</p>
   <div class="panel">${setores(C,total)}</div>`;
 }
@@ -682,9 +682,10 @@ function abrirAtivo(t){
   <div class="grid2" style="margin:10px 0">
     <div class="panel kpi"><div class="l">Quantidade</div><div class="v num">${qtd(p.q)}</div></div>
     <div class="panel kpi"><div class="l">Preço médio</div><div class="v num">${S.privado?'••':'R$ '+nf2.format(p.pm)}</div></div>
-    <div class="panel kpi"><div class="l">Cotação</div><div class="v num">R$ ${nf2.format(a.cot)}</div><div class="l small" style="${cotAtual(cotacaoDe(t))?'':'color:var(--warn)'}">${a.cotFonte==='brapi'?'brapi, '+dt(a.cotData):a.cotFonte==='manual'?'informada por você em '+dt(a.cotData):a.cotFonte==='ultima'?'último preço pago ('+dt(a.cotData)+')':'sem cotação'}</div></div>
+    <div class="panel kpi"><div class="l">Cotação</div><div class="v num">R$ ${nf2.format(a.cot)}</div><div class="l small" style="${cotAtual(cotacaoDe(t))?'':'color:var(--warn)'}">${a.cotFonte==='brapi'?'brapi, '+dt(a.cotData):a.cotFonte==='yahoo'?'Yahoo, '+dt(a.cotData):a.cotFonte==='manual'?'informada por você em '+dt(a.cotData):a.cotFonte==='ultima'?'último preço pago ('+dt(a.cotData)+')':'sem cotação'}</div></div>
     <div class="panel kpi"><div class="l">${a.tipo==='fii'?'Número mágico':'Custo total'}</div><div class="v num">${a.tipo==='fii'?magico(t)+' cotas':brl(p.custo)}</div></div>
   </div>
+  ${(()=>{const val=p.q*a.cot,r=val-p.custo,pc=p.custo?r/p.custo*100:0,cor=r>=0?'var(--ok)':'var(--bad)';return `<div class="panel" style="margin-bottom:10px"><div class="kpi3"><div class="kpi"><div class="l">Aplicado</div><div class="v num">${brl(p.custo)}</div></div><div class="kpi"><div class="l">Patrimônio</div><div class="v num">${brl(val)}</div></div><div class="kpi"><div class="l">Resultado</div><div class="v num" style="color:${cor}">${r>=0?'+':'−'}${brl(Math.abs(r))}</div><div class="l small" style="color:${cor}">${r>=0?'+':'−'}${pct(Math.abs(pc))}</div></div></div></div>`})()}
   <div class="row"><input id="cotManual" inputmode="decimal" placeholder="Corrigir cotação (R$)" style="flex:1"><button class="btn sec" id="btnCotManual">Salvar</button></div>
   <h3 style="margin-top:14px">Proventos</h3>
   <div class="list">${E.slice(0,12).map(itemProv).join('')||'<div class="item muted">Sem proventos.</div>'}</div>
