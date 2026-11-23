@@ -389,6 +389,7 @@ function pos(t,ate){
         case 'amortizacao': custo=Math.max(0,custo-(e.valor||0));break;
         case 'resgate': {if(e.incorporadoEm&&q<=1e-9)break;const rq=Math.min(e.q,Math.max(q,0));custo-=rq*pm;if(!e.incorporadoEm)res+=(e.valor||0)-rq*pm;q-=e.incorporadoEm?rq:e.q;break}
         case 'baixa': res-=custo;q=0;custo=0;break;
+        case 'ajuste_pm': if(q>1e-9)custo=q*e.pm;break;
         case 'incorporacao':
           if(e.t===t&&e.para!==t){q=0;custo=0}
           else if(e.para===t){const ant=pos(e.t,diaAntes(e.dataEx));q+=e.qPara;custo+=Math.max(0,ant.custo-(e.caixa||0))}
@@ -669,6 +670,7 @@ function setores(C,total){
   return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([s,v])=>`<div class="row between small" style="margin:5px 0"><span>${esc(s)}</span><span class="num">${pct(v/total*100)}</span></div><div class="meta-bar" style="height:6px;margin:0 0 6px"><i style="width:${v/total*100}%;background:var(--field)"></i></div>`).join('');
 }
 function abrirAtivo(t){
+  setTimeout(()=>{const bp=document.getElementById('btnPmManual');if(bp)bp.onclick=()=>{const v=parseBR(document.getElementById('pmManual').value);const atual=pos(t,HOJE);if(!v||atual.q<=0){toast('Digite o novo preço médio.');return}if(!confirm(`Ajustar o preço médio de ${t} de R$ ${nf2.format(atual.pm)} para R$ ${nf2.format(v)}?`))return;const lote=nid('P');S.eventos.push({id:nid('e'),t,tipo:'ajuste_pm',dataEx:HOJE,pm:v,status:'aplicado',origem:'Manual',lote,desc:`Preço médio ajustado de R$ ${nf2.format(atual.pm)} para R$ ${nf2.format(v)}`});S.lotes.push({id:lote,tipo:'evento',corretora:'Ajuste de preço médio '+t,nr:'',data:HOJE,qtd:1,camada:`de R$ ${nf2.format(atual.pm)} para R$ ${nf2.format(v)}`});save();render();abrirAtivo(t);toast('Preço médio de '+t+' ajustado.')}},0);
   setTimeout(()=>{const b=document.getElementById('btnCotManual');if(b)b.onclick=()=>{const v=parseBR(document.getElementById('cotManual').value);if(!v){toast('Digite a cotação.');return}S.cotacoes=S.cotacoes||{};S.cotacoes[t]={p:v,d:HOJE,fonte:'manual'};save();render();abrirAtivo(t);toast('Cotação de '+t+' salva.')}},0);
   const a=ativo(t);const p=pos(t,HOJE);const E=entradas().filter(e=>e.t===t).reverse();
   const ops=S.ops.filter(o=>o.t===t).sort((x,y)=>x.d<y.d?1:-1);
@@ -681,6 +683,8 @@ function abrirAtivo(t){
   </div>
   ${(()=>{const val=p.q*a.cot,r=val-p.custo,pc=p.custo?r/p.custo*100:0,cor=r>=0?'var(--ok)':'var(--bad)';return `<div class="panel" style="margin-bottom:10px"><div class="kpi3"><div class="kpi"><div class="l">Aplicado</div><div class="v num">${brl(p.custo)}</div></div><div class="kpi"><div class="l">Patrimônio</div><div class="v num">${brl(val)}</div></div><div class="kpi"><div class="l">Resultado</div><div class="v num" style="color:${cor}">${r>=0?'+':'−'}${brl(Math.abs(r))}</div><div class="l small" style="color:${cor}">${r>=0?'+':'−'}${pct(Math.abs(pc))}</div></div></div></div>`})()}
   <div class="row"><input id="cotManual" inputmode="decimal" placeholder="Corrigir cotação (R$)" style="flex:1"><button class="btn sec" id="btnCotManual">Salvar</button></div>
+  <div class="row" style="margin-top:8px"><input id="pmManual" inputmode="decimal" placeholder="Ajustar preço médio (R$)" style="flex:1" ${S._ro?'disabled':''}><button class="btn sec" id="btnPmManual" ${S._ro?'disabled':''}>Ajustar</button></div>
+  <p class="small muted" style="margin:4px 2px 0">O ajuste vale a partir de hoje e aparece no histórico. Compras e vendas futuras continuam recalculando o preço médio a partir dele. Para desfazer, use Lançar › Lotes.</p>
   <h3 style="margin-top:14px">Proventos</h3>
   <div class="list">${E.slice(0,12).map(itemProv).join('')||'<div class="item muted">Sem proventos.</div>'}</div>
   <h3 style="margin-top:14px">Histórico de movimentações</h3>
@@ -707,6 +711,7 @@ function historicoAtivo(t){
       case 'cisao_ref': Object.assign(r,{ev:'Cisão (ativo de origem)',q:0});break;
       case 'baixa': Object.assign(r,{ev:'Posição encerrada',q:-ant});break;
       case 'incorporacao': if(e.para===t&&e.t!==t)Object.assign(r,{ev:'Incorporação (veio de '+e.t+')',q:e.qPara});else Object.assign(r,{ev:'Incorporado em '+e.para,q:-ant});break;
+      case 'ajuste_pm': Object.assign(r,{ev:'Ajuste manual do preço médio',q:0,val:'PM R$ '+nf2.format(e.pm)});break;
       default: Object.assign(r,{ev:e.tipo,q:0});
     }
     L.push(r);
