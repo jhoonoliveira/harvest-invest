@@ -628,15 +628,9 @@ function vInicio(){
   on('#irEventos','click',()=>{UI.tab='mais';UI.sub.mais='eventos';render()});
   return `${pendencias()?`<div class="alert warn" style="margin:0 0 12px"><b>Conferência com a B3:</b> ${pendencias()} pendência${pendencias()>1?'s':''} para revisar. Você pode resolver aos poucos, elas ficam guardadas. <button class="btn ghost" data-ir-conf style="padding:2px 6px">Resolver</button></div>`:''}
   <section class="hero">
-    <div class="lbl">${mLbl(sel)}/${sel.slice(2,4)}${sel===cur?' · mês atual':sel<cur?' · já passou':''} · total confirmado</div>
-    <div class="big num">${brl(v('recebido')+v('provisionado')+v('anunciado'))}</div>
-    <div class="heroGrid">
-      <span><i class="dot" style="background:#E9C85A"></i>Recebido</span><b class="num">${brl(v('recebido'))}</b>
-      <span><i class="dot" style="background:#F4E2A0"></i>Provisionado</span><b class="num">${brl(v('provisionado'))}</b>
-      <span><i class="dot" style="background:rgba(242,246,239,.55)"></i>Anunciado</span><b class="num">${brl(v('anunciado'))}</b>
-      <span><i class="dot" style="background:rgba(242,246,239,.22)"></i>Projetado</span><b class="num">${brl(v('projetado'))}</b>
-    </div>
-    <div class="sub" style="margin-top:6px">A receber: <b class="num">${brl(v('provisionado')+v('anunciado'))}</b> · Com projetado: <b class="num">${brl(v('recebido')+v('provisionado')+v('anunciado')+v('projetado'))}</b></div>
+    <div class="lbl">${mLbl(sel)}/${sel.slice(2,4)}${sel===cur?' · mês atual':sel<cur?' · já passou':''}</div>
+    <div class="big num">${brl(v('recebido')+v('provisionado')+v('anunciado')+v('projetado'))}</div>
+    ${(()=>{const P=[['recebido','Recebido','#E9C85A'],['provisionado','Provisionado','#F4E2A0'],['anunciado','Anunciado','rgba(242,246,239,.55)'],['projetado','Projetado','rgba(242,246,239,.22)']].filter(x=>v(x[0])>0.005);return P.length?`<div class="heroGrid">${P.map(x=>`<span><i class="dot" style="background:${x[2]}"></i>${x[1]}</span><b class="num">${brl(v(x[0]))}</b>`).join('')}</div>`:`<div class="sub">Nenhum provento neste mês.</div>`})()}
     <button class="btn ghost" id="verMesLista" style="color:var(--field-ink);padding:6px 0;opacity:.9">Ver os pagamentos de ${mLbl(sel)} ›</button>
     <div class="stalks">${stalks}</div>
     <div class="legend">
