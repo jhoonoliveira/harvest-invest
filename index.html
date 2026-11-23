@@ -552,6 +552,42 @@ on('[data-seg]','click',()=>{});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-seg]');if(b){UI.sub[b.dataset.seg]=b.dataset.k;render()}});
 
 /* ===================== INÍCIO ===================== */
+// ---------- Lucro total: valorização da carteira + vendas já realizadas + proventos recebidos ----------
+function lucroTotal(){
+  const E=entradas().filter(e=>e.est==='recebido');
+  const provT={};E.forEach(e=>provT[e.t]=(provT[e.t]||0)+e.liq);
+  const C=carteira();const emCart=new Set(C.map(c=>c.t));
+  const L={};const linha=t=>L[t]=L[t]||{t,val:0,vendas:0,prov:0,aplicado:0,emCart:emCart.has(t)};
+  C.forEach(c=>{const r=linha(c.t);r.val=c.valor-c.custo;r.aplicado=c.custo});
+  tickers().forEach(t=>{const res=pos(t,HOJE).res;if(Math.abs(res)>0.004)linha(t).vendas=res});
+  Object.entries(provT).forEach(([t,v])=>{linha(t).prov=v});
+  const lista=Object.values(L).map(r=>Object.assign(r,{total:r.val+r.vendas+r.prov})).sort((a,b)=>b.total-a.total);
+  const soma=k=>lista.reduce((s,r)=>s+r[k],0);
+  const aplicado=C.reduce((s,c)=>s+c.custo,0);
+  return {val:soma('val'),vendas:soma('vendas'),prov:soma('prov'),total:soma('total'),aplicado,lista,semCot:C.filter(c=>!cotAtual(cotacaoDe(c.t))).length,
+    provCart:lista.filter(r=>r.emCart).reduce((s,r)=>s+r.prov,0),provVend:lista.filter(r=>!r.emCart).reduce((s,r)=>s+r.prov,0)};
+}
+function lucroPainel(){
+  if(!carteira().length) return '';
+  const R=lucroTotal();const cor=v=>v>=0?'var(--ok)':'var(--bad)';const sin=v=>(v>=0?'+':'−')+brl(Math.abs(v));
+  const mx=Math.max(Math.abs(R.val),Math.abs(R.vendas),Math.abs(R.prov),1);
+  const item=(ic,tit,sub,v)=>`<div style="margin:10px 0"><div class="row between"><div><span aria-hidden="true">${ic}</span> <b>${tit}</b><div class="small muted">${sub}</div></div><b class="num" style="color:${cor(v)}">${sin(v)}</b></div><div class="meta-bar" style="height:6px;margin-top:5px"><i style="width:${Math.abs(v)/mx*100}%;background:${v>=0?(ic==='🌾'?'var(--grain)':'var(--ok)'):'var(--bad)'}"></i></div></div>`;
+  on('#btnLucroDet','click',abrirLucroDetalhe);
+  return `<div class="panel" style="margin-top:10px">
+    <div class="row between"><div><div class="small muted">Lucro total</div><div class="kpi"><span class="v num" style="font-size:26px;color:${cor(R.total)}">${sin(R.total)}</span></div><div class="small" style="color:${cor(R.total)}">${R.aplicado?(R.total>=0?'+':'−')+pct(Math.abs(R.total/R.aplicado*100))+' sobre o valor aplicado hoje':''}</div></div></div>
+    ${item('📈','Valorização da carteira','patrimônio de hoje − valor aplicado',R.val)}
+    ${item('💰','Vendas já realizadas','lucro ou prejuízo dos ativos que você vendeu',R.vendas)}
+    ${item('🌾','Proventos recebidos','dividendos, JCP e rendimentos, líquidos de IR',R.prov)}
+    ${R.semCot?`<p class="small" style="color:var(--warn);margin:6px 0 0">${R.semCot} ativo${R.semCot>1?'s':''} sem cotação atual: a valorização pode estar diferente.</p>`:''}
+    <button class="btn sec full" id="btnLucroDet" style="margin-top:10px">Ver por ativo</button></div>`;
+}
+function abrirLucroDetalhe(){
+  const R=lucroTotal();const cor=v=>v>=0?'var(--ok)':'var(--bad)';const sin=v=>v?(v>=0?'+':'−')+brl(Math.abs(v)):'—';
+  sheet(`<h3>Lucro total por ativo</h3><p class="small muted" style="margin-top:0">Valorização (hoje − aplicado) + vendas realizadas + proventos recebidos. Do maior para o menor.</p>
+  <div class="list">${R.lista.map(r=>`<div class="item" style="align-items:flex-start">${logo(r.t,'sm')}<div class="flex1"><div class="row between"><span class="tk">${r.t}</span><b class="num" style="color:${cor(r.total)}">${sin(r.total)}</b></div>
+    <div class="small muted">${r.emCart?'Valorização '+sin(r.val)+' · ':'Vendido · '}${r.vendas?'Vendas '+sin(r.vendas)+' · ':''}Proventos ${sin(r.prov)}</div></div></div>`).join('')}</div>
+  <div class="panel small" style="margin-top:10px"><div class="row between"><span>Proventos de ativos que você ainda tem</span><span class="num">${brl(R.provCart)}</span></div><div class="row between"><span>Proventos de ativos já vendidos</span><span class="num">${brl(R.provVend)}</span></div></div>`);
+}
 function vInicio(){
   on('[data-ir-conf]','click',()=>{UI.tab='mais';UI.sub.mais='conferencia';render();window.scrollTo(0,0)});
   if(!S.ops.length){on('[data-ir-importar]','click',()=>{UI.tab='lancar';UI.sub.lancar='importar';render()});return vazio('Bem-vindo ao Harvest Invest','Comece importando suas notas de corretagem. O app monta a carteira, o preço médio e calcula os proventos a receber.')}
@@ -611,6 +647,7 @@ function vInicio(){
     <div class="meta-bar" role="progressbar" aria-valuenow="${metaPct.toFixed(0)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${metaPct}%"></i></div>
     <div class="small muted" style="margin-top:6px">${metaPct.toFixed(0)}% da meta</div>
   </div>
+  ${lucroPainel()}
   <h2>Próximos pagamentos</h2>
   ${false?`<div class="alert info small" style="margin-bottom:10px">Para ver os pagamentos já anunciados, importe o extrato <b>Proventos › Provisionados</b> da Área do Investidor da B3 (Excel), em Lançar › Importar.${S.cfg.provProvData?'':''}</div>`:(S.cfg.provProvData?`<p class="small muted" style="margin:-4px 2px 8px">Provisionados importados da B3 em ${dt(S.cfg.provProvData)}.</p>`:'')}
   <div class="list">${prox30.map(itemProv).join('')||'<div class="item muted">Nenhum pagamento confirmado.</div>'}</div>
