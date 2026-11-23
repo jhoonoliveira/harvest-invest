@@ -184,6 +184,7 @@ td input{padding:5px 7px;min-width:78px}
 <div id="sheetRoot"></div>
 
 <script>
+try{const U0=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.CapacitorUpdater;if(U0)U0.notifyAppReady()}catch(e){}
 /* ===================== DADOS DE EXEMPLO ===================== */
 const HOJE = (()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')})();
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
@@ -269,14 +270,7 @@ function save(){POSC.clear();if(S._ro)return;try{localStorage.setItem(chaveDe(ME
 function trocarCarteira(id){
   if(!S._ro)save();META.ativa=id;salvarMeta();
   S=id==='todas'?consolidar():lerCarteira(id);
-  if(id!=='todas'){if(META.ativa!=='principal'){S=META.ativa==='todas'?consolidar():lerCarteira(META.ativa);aplicarTema()}
-if(!S._ro){try{aplicarConhecidos();incorporarAutomatico()}catch(e){}}
-if(NATIVO){
-  try{const U=window.Capacitor.Plugins.CapacitorUpdater;if(U)U.notifyAppReady()}catch(e){}
-  setTimeout(()=>verificarAtualizacao(false),4000);
-  const velho=v=>!v||(Date.now()-new Date(v).getTime())>6*3600e3;
-  setTimeout(()=>{if(S._ro)return;if(velho(S.cfg.ultimaCotacao))atualizarCotacoes(true);if(velho(S.cfg.ultimosProventos))buscarProventosOnline(true)},1500);
-}}
+  if(id!=='todas'){try{aplicarConhecidos();incorporarAutomatico()}catch(e){}}
   UI.notas=[];UI.b3=null;UI.notaAberta=null;POSC.clear();$('#sheetRoot').innerHTML='';aplicarTema();render();window.scrollTo(0,0);toast('Carteira: '+nomeCarteira(id));
 }
 function abrirCarteiras(){
@@ -1547,8 +1541,14 @@ function aplicarTema(){
   $('#btnTema').setAttribute('aria-label',escuro?'Usar tema claro':'Usar tema escuro');$('#btnTema').title=escuro?'Tema claro':'Tema escuro';
 }
 $('#btnTema').onclick=()=>{S.tema=temaEfetivo()==='dark'?'light':'dark';save();aplicarTema();render()};
+if(META.ativa!=='principal'){S=META.ativa==='todas'?consolidar():lerCarteira(META.ativa)}
 aplicarTema();
-try{aplicarConhecidos();incorporarAutomatico()}catch(e){}
+if(!S._ro){try{aplicarConhecidos();incorporarAutomatico()}catch(e){}}
+if(NATIVO){
+  setTimeout(()=>verificarAtualizacao(false),4000);
+  const velho=v=>!v||(Date.now()-new Date(v).getTime())>6*3600e3;
+  setTimeout(()=>{if(S._ro)return;if(velho(S.cfg.ultimaCotacao))atualizarCotacoes(true);if(velho(S.cfg.ultimosProventos))buscarProventosOnline(true)},1500);
+}
 $('#btnOlho').onclick=()=>{S.privado=!S.privado;save();render()};
 $('#btnAtualizar').onclick=()=>{atualizarCotacoes();buscarProventosOnline(true)};
 render();
