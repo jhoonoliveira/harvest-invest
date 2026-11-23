@@ -73,6 +73,7 @@ h3{font-size:16px;margin:0 0 6px}
 .stalk .m{font-size:11px;margin-top:4px;opacity:.8}
 .stalk.cur .m{opacity:1;font-weight:600;color:var(--grain-soft)}
 .stalk.cur .b{outline:2px solid var(--grain-soft);outline-offset:2px}
+.pilula{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin:0 0 10px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer;text-align:left}
 .heroGrid{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:8px}
 .heroGrid .hp{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .heroGrid b{font-weight:600;margin-left:3px}
@@ -331,15 +332,15 @@ async function cotacaoYahoo(t){
   const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}.SA?range=1d&interval=1d`,{headers:{'User-Agent':'Mozilla/5.0'}});
   if(!r.ok)throw new Error(r.status);const j=await r.json();const m=j.chart&&j.chart.result&&j.chart.result[0]&&j.chart.result[0].meta;
   if(!m||m.regularMarketPrice==null)throw new Error('sem preço');
-  return {p:m.regularMarketPrice,d:new Date((m.regularMarketTime||Date.now()/1000)*1000).toISOString().slice(0,10),h:new Date().toISOString(),fonte:'yahoo'};
+  return {p:m.regularMarketPrice,d:new Date((m.regularMarketTime||Date.now()/1000)*1000).toISOString().slice(0,10),h:new Date().toISOString(),fonte:'yahoo',pc:m.chartPreviousClose??m.previousClose??null};
 }
 async function cotacaoBrapi(t,tk){
   const r=await fetch(`https://brapi.dev/api/quote/${encodeURIComponent(t)}?token=${encodeURIComponent(tk)}`);
   if(!r.ok)throw new Error(r.status);const j=await r.json();const q=j.results&&j.results[0];
   if(!q||q.regularMarketPrice==null)throw new Error('sem preço');
-  return {p:q.regularMarketPrice,d:String(q.regularMarketTime||new Date().toISOString()).slice(0,10),h:new Date().toISOString(),fonte:'brapi'};
+  return {p:q.regularMarketPrice,d:String(q.regularMarketTime||new Date().toISOString()).slice(0,10),h:new Date().toISOString(),fonte:'brapi',pc:q.regularMarketPreviousClose??(q.regularMarketChange!=null?q.regularMarketPrice-q.regularMarketChange:null)};
 }
-async function atualizarCotacoes(silencioso){
+async function atualizarCotacoes(silencioso,auto){
   const tk=(S.cfg.brapiToken||'').trim(); const L=carteira().map(c=>c.t);
   if(!L.length){if(!silencioso)toast('Sua carteira está vazia.');return}
   S.cotacoes=S.cotacoes||{};let ok=0;const falha=[];const fila=[...L];
@@ -350,9 +351,24 @@ async function atualizarCotacoes(silencioso){
     S.cotacoes[t]=c;ok++;
   }catch(e){falha.push(t)}}};
   await Promise.all([trab(),trab(),trab()]);
-  S.cfg.ultimaCotacao=new Date().toISOString();save();render();
-  if(!silencioso||!ok)toast(ok?`${ok} cotações atualizadas${falha.length?`; sem resposta: ${falha.slice(0,4).join(', ')}${falha.length>4?'…':''}`:''}.`:(NATIVO?'Não consegui buscar as cotações. Confira a internet.':'No navegador a busca é bloqueada; no app ela funciona.'));
+  S.cfg.ultimaCotacao=new Date().toISOString();save();
+  if(!auto||(['inicio','carteira'].includes(UI.tab)&&!$('#sheetRoot').innerHTML&&!(document.activeElement&&document.activeElement.matches&&document.activeElement.matches('input,textarea,select'))))render();
+  if(!auto&&(!silencioso||!ok))toast(ok?`${ok} cotações atualizadas${falha.length?`; sem resposta: ${falha.slice(0,4).join(', ')}${falha.length>4?'…':''}`:''}.`:(NATIVO?'Não consegui buscar as cotações. Confira a internet.':'No navegador a busca é bloqueada; no app ela funciona.'));
 }
+
+// ---------- variação do dia (cotação atual × fechamento anterior) ----------
+function variacaoDia(t){const c=(S.cotacoes||{})[t];if(!c||!c.pc||!cotAtual(c))return null;const q=pos(t,HOJE).q;return {pct:(c.p/c.pc-1)*100,val:q*(c.p-c.pc),base:q*c.pc,d:c.d,h:c.h}}
+function variacaoCarteira(){let val=0,base=0,n=0,d='',h='';for(const c of carteira()){const v=variacaoDia(c.t);if(!v)continue;val+=v.val;base+=v.base;n++;if(v.d>d)d=v.d;if((v.h||'')>h)h=v.h||''}return n?{val,pct:base?val/base*100:0,n,d,h}:null}
+function rotuloDia(d){return d&&d<HOJE?'último pregão ('+dt(d).slice(0,5)+')':'hoje'}
+function sinal(v){return v>=0?'+':'−'}
+function linhaHoje(){const v=variacaoCarteira();if(!v)return '';const cor=v.val>=0?'var(--ok)':'var(--bad)';const r=rotuloDia(v.d);return `<div class="row between small" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><span class="muted">Variação ${r}${v.h&&v.d>=HOJE?' · '+new Date(v.h).toTimeString().slice(0,5):''}</span><b class="num" style="color:${cor}">${v.val>=0?'▲':'▼'} ${sinal(v.val)}${brl(Math.abs(v.val))} (${sinal(v.val)}${nf2.format(Math.abs(v.pct))}%)</b></div>`}
+function chipDia(t){const v=variacaoDia(t);if(!v)return '';return ` <span style="color:${v.pct>=0?'var(--ok)':'var(--bad)'}">${v.pct>=0?'▲':'▼'}${nf2.format(Math.abs(v.pct))}%</span>`}
+function pilulaHoje(){const v=variacaoCarteira();if(!v)return '';on('#pilHoje','click',()=>{UI.tab='carteira';render();window.scrollTo(0,0)});const cor=v.val>=0?'var(--ok)':'var(--bad)';return `<button id="pilHoje" class="pilula"><span class="muted">Carteira ${rotuloDia(v.d)}</span><span><b class="num" style="color:${cor}">${v.val>=0?'▲':'▼'} ${sinal(v.val)}${brl(Math.abs(v.val))} (${sinal(v.val)}${nf2.format(Math.abs(v.pct))}%)</b> <span class="muted" aria-hidden="true">›</span></span></button>`}
+function pregaoAberto(){const d=new Date();const w=d.getDay();const m=d.getHours()*60+d.getMinutes();return w>=1&&w<=5&&m>=600&&m<=1115}
+let _autoCot=null;
+function iniciarAutoCotacao(){if(_autoCot)return;const lim=()=>(S.cfg.brapiToken?15:5)*60e3;const idade=()=>Date.now()-new Date(S.cfg.ultimaCotacao||0).getTime();
+  _autoCot=setInterval(()=>{if(document.visibilityState==='visible'&&pregaoAberto()&&!S._ro&&idade()>=lim())atualizarCotacoes(true,true)},60e3);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&pregaoAberto()&&!S._ro&&idade()>=lim())atualizarCotacoes(true,true)})}
 
 /* ===================== CÁLCULOS ===================== */
 function eventosVisiveis(){return S.eventos.filter(e=>e.status==='aplicado'||S.ops.some(o=>o.t===e.t&&o.d<=e.dataEx))}
@@ -627,6 +643,7 @@ function vInicio(){
   on('#verMesLista','click',()=>{UI.tab='proventos';UI.sub.proventos='calendario';UI.mesSel=sel;render();window.scrollTo(0,0)});
   on('#irEventos','click',()=>{UI.tab='mais';UI.sub.mais='eventos';render()});
   return `${pendencias()?`<div class="alert warn" style="margin:0 0 12px"><b>Conferência com a B3:</b> ${pendencias()} pendência${pendencias()>1?'s':''} para revisar. Você pode resolver aos poucos, elas ficam guardadas. <button class="btn ghost" data-ir-conf style="padding:2px 6px">Resolver</button></div>`:''}
+  ${pilulaHoje()}
   <section class="hero">
     <div class="lbl">${mLbl(sel)}/${sel.slice(2,4)}${sel===cur?' · mês atual':sel<cur?' · já passou':''}</div>
     <div class="big num">${brl(v('recebido')+v('provisionado')+v('anunciado')+v('projetado'))}</div>
@@ -691,7 +708,7 @@ function vCarteira(){
       <div class="kpi"><div class="l">Resultado</div><div class="v num" style="color:${total>=custo?'var(--ok)':'var(--bad)'}">${total>=custo?'+':'−'}${brl(Math.abs(total-custo))}</div><div class="l small" style="color:${total>=custo?'var(--ok)':'var(--bad)'}">${custo?(total>=custo?'+':'')+pct((total/custo-1)*100):'—'}</div></div>
     </div>
     <div class="meta-bar" style="height:8px;margin-top:12px;position:relative" aria-hidden="true"><i style="width:${Math.min(100,custo/Math.max(total,custo,1)*100)}%;background:var(--muted);opacity:.45;position:absolute;inset:0 auto 0 0"></i><i style="width:${Math.min(100,total/Math.max(total,custo,1)*100)}%;background:${total>=custo?'var(--ok)':'var(--bad)'};opacity:.85"></i></div>
-    <div class="small muted" style="margin-top:6px">Investido = custo das posições atuais (preço médio × quantidade, com custos). Patrimônio = quantidade × cotação.</div>
+    ${linhaHoje()}
   </div>
   ${pendencias()?`<div class="alert warn" style="margin:12px 0 0"><b>Conferência com a B3:</b> ${pendencias()} pendência${pendencias()>1?'s':''} para revisar. Você pode resolver aos poucos, elas ficam guardadas. <button class="btn ghost" data-ir-conf style="padding:2px 6px">Resolver</button></div>`:''}
   ${semCot?`<div class="alert warn">${semCot} de ${C.length} ativos estão sem cotação atual e usam o último preço que você pagou, por isso patrimônio e resultado não são reais. <button class="btn ghost" id="btnCotCart" style="padding:2px 6px">Buscar cotações</button></div>`:(S.cfg.ultimaCotacao?`<p class="small muted" style="margin:8px 2px 0">Cotações da brapi atualizadas em ${dt(S.cfg.ultimaCotacao.slice(0,10))} às ${S.cfg.ultimaCotacao.slice(11,16)} (UTC).</p>`:'')}
@@ -703,7 +720,7 @@ function vCarteira(){
     const yoc=c.custo?prov12.reduce((s,e)=>s+e.liq,0)/c.custo*100:0;
     const vpc=provPorCota12m(c.t);
     const dy=c.cot?vpc/c.cot*100:0;
-    return `<button class="item" data-ativo="${c.t}" data-busca="${esc((c.t+' '+c.nome).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''))}">${logo(c.t)}<div class="flex1"><div class="tk">${c.t}</div><div class="small"><b class="num">${qtd(Math.round(c.q*1000)/1000)}</b> cota${c.q===1?'':'s'} · PM R$ ${S.privado?'••':nf2.format(c.pm)}</div><div class="small ${cotAtual(cotacaoDe(c.t))?'muted':''}" style="${cotAtual(cotacaoDe(c.t))?'':'color:var(--warn)'}">${cotAtual(cotacaoDe(c.t))?'Cotação R$ '+nf2.format(c.cot):'sem cotação atual'} · DY ${pct(dy)} · YoC ${pct(yoc)}</div><div class="small muted ellip">${esc(c.nome)}</div></div>
+    return `<button class="item" data-ativo="${c.t}" data-busca="${esc((c.t+' '+c.nome).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''))}">${logo(c.t)}<div class="flex1"><div class="tk">${c.t}</div><div class="small"><b class="num">${qtd(Math.round(c.q*1000)/1000)}</b> cota${c.q===1?'':'s'} · PM R$ ${S.privado?'••':nf2.format(c.pm)}</div><div class="small ${cotAtual(cotacaoDe(c.t))?'muted':''}" style="${cotAtual(cotacaoDe(c.t))?'':'color:var(--warn)'}">${cotAtual(cotacaoDe(c.t))?'Cotação R$ '+nf2.format(c.cot)+chipDia(c.t):'sem cotação atual'} · DY ${pct(dy)} · YoC ${pct(yoc)}</div><div class="small muted ellip">${esc(c.nome)}</div></div>
     <div class="right">${(()=>{const r=c.valor-c.custo,pc=c.custo?r/c.custo*100:0,cor=r>=0?'var(--ok)':'var(--bad)';return `<div class="num"><b>${brl(c.valor)}</b></div><div class="small muted num">aplicado ${brl(c.custo)}</div><div class="small num" style="color:${cor}">${r>=0?'+':'−'}${brl(Math.abs(r))}</div><div class="small num" style="color:${cor}">${r>=0?'+':'−'}${pct(Math.abs(pc))}</div>`})()}</div></button>`}).join('')}</div>
   <p class="small muted">Peso por setor</p>
   <div class="panel">${setores(C,total)}</div>`;
@@ -722,7 +739,7 @@ function abrirAtivo(t){
   <div class="grid2" style="margin:10px 0">
     <div class="panel kpi"><div class="l">Quantidade</div><div class="v num">${qtd(p.q)}</div></div>
     <div class="panel kpi"><div class="l">Preço médio</div><div class="v num">${S.privado?'••':'R$ '+nf2.format(p.pm)}</div></div>
-    <div class="panel kpi"><div class="l">Cotação</div><div class="v num">R$ ${nf2.format(a.cot)}</div><div class="l small" style="${cotAtual(cotacaoDe(t))?'':'color:var(--warn)'}">${a.cotFonte==='brapi'?'brapi, '+dt(a.cotData):a.cotFonte==='yahoo'?'Yahoo, '+dt(a.cotData):a.cotFonte==='manual'?'informada por você em '+dt(a.cotData):a.cotFonte==='ultima'?'último preço pago ('+dt(a.cotData)+')':'sem cotação'}</div></div>
+    <div class="panel kpi"><div class="l">Cotação</div><div class="v num">R$ ${nf2.format(a.cot)}</div><div class="l small" style="${cotAtual(cotacaoDe(t))?'':'color:var(--warn)'}">${a.cotFonte==='brapi'?'brapi, '+dt(a.cotData):a.cotFonte==='yahoo'?'Yahoo, '+dt(a.cotData):a.cotFonte==='manual'?'informada por você em '+dt(a.cotData):a.cotFonte==='ultima'?'último preço pago ('+dt(a.cotData)+')':'sem cotação'}</div>${(()=>{const v=variacaoDia(t);return v?`<div class="l small" style="color:${v.val>=0?'var(--ok)':'var(--bad)'}">${rotuloDia(v.d)} ${sinal(v.pct)}${nf2.format(Math.abs(v.pct))}% (${sinal(v.val)}${brl(Math.abs(v.val))})</div>`:''})()}</div>
     <div class="panel kpi"><div class="l">${a.tipo==='fii'?'Número mágico':'Custo total'}</div><div class="v num">${a.tipo==='fii'?magico(t)+' cotas':brl(p.custo)}</div></div>
   </div>
   ${(()=>{const val=p.q*a.cot,r=val-p.custo,pc=p.custo?r/p.custo*100:0,cor=r>=0?'var(--ok)':'var(--bad)';return `<div class="panel" style="margin-bottom:10px"><div class="kpi3"><div class="kpi"><div class="l">Aplicado</div><div class="v num">${brl(p.custo)}</div></div><div class="kpi"><div class="l">Patrimônio</div><div class="v num">${brl(val)}</div></div><div class="kpi"><div class="l">Resultado</div><div class="v num" style="color:${cor}">${r>=0?'+':'−'}${brl(Math.abs(r))}</div><div class="l small" style="color:${cor}">${r>=0?'+':'−'}${pct(Math.abs(pc))}</div></div></div></div>`})()}
@@ -1596,7 +1613,7 @@ if(!S._ro){try{aplicarConhecidos();incorporarAutomatico()}catch(e){}}
 if(NATIVO){
   setTimeout(()=>verificarAtualizacao(false),4000);
   const velho=v=>!v||(Date.now()-new Date(v).getTime())>6*3600e3;
-  setTimeout(()=>{if(S._ro)return;if(velho(S.cfg.ultimaCotacao))atualizarCotacoes(true);if(velho(S.cfg.ultimosProventos))buscarProventosOnline(true)},1500);
+  setTimeout(()=>{if(S._ro)return;if(velho(S.cfg.ultimaCotacao)||(pregaoAberto()&&Date.now()-new Date(S.cfg.ultimaCotacao||0).getTime()>5*60e3))atualizarCotacoes(true);iniciarAutoCotacao();if(velho(S.cfg.ultimosProventos))buscarProventosOnline(true)},1500);
 }
 $('#btnOlho').onclick=()=>{S.privado=!S.privado;save();render()};
 $('#btnAtualizar').onclick=()=>{atualizarCotacoes();buscarProventosOnline(true)};
