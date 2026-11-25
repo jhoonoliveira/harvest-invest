@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="versao.js"></script>
+<script src="plugins.js"></script>
 <script src="lib/pdf.min.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
 <style>
@@ -189,7 +191,7 @@ td input{padding:5px 7px;min-width:78px}
 <div id="sheetRoot"></div>
 
 <script>
-try{const U0=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.CapacitorUpdater;if(U0)U0.notifyAppReady()}catch(e){}
+try{if(window.HVN&&HVN.Updater)HVN.Updater.notifyAppReady()}catch(e){}
 /* ===================== DADOS DE EXEMPLO ===================== */
 const HOJE = (()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')})();
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
@@ -433,8 +435,8 @@ function provB3Entradas(){
   return (S.provB3||[]).map(p=>{let bruto=p.liq,ir=0;if(p.tipo==='jcp'){const a=aliqJcp(p);bruto=p.liq/(1-a);ir=bruto-p.liq}
     return {id:p.key,t:p.t,tipo:p.tipo,v:p.vUnit||(p.q?bruto/p.q:0),com:p.pag,pag:p.pag,q:p.q,bruto,ir,liq:p.liq,est:p.pag<=HOJE?'recebido':'provisionado',fonte:'B3',corretora:p.corretora,b3:true}});
 }
-const NATIVO=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
-const VERSAO_APP='__VERSAO__';
+const NATIVO=!!(window.HVN&&HVN.Capacitor&&HVN.Capacitor.isNativePlatform&&HVN.Capacitor.isNativePlatform());
+const VERSAO_APP=(window.HVVER&&HVVER.versao)||'0';
 function dataBR(v){const m=String(v||'').match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?`${m[3]}-${m[2]}-${m[1]}`:null}
 function tipoProvento(et){const s=String(et||'').toLowerCase();return /jcp|juros/.test(s)?'jcp':/rend/.test(s)?'rendimento':/amort/.test(s)?'amortizacao':'dividendo'}
 async function proventosDe(t,tipo){
@@ -472,18 +474,192 @@ function provOnlineEntradas(base){
   return out;
 }
 function cmpVer(a,b){const x=String(a).split('.').map(Number),y=String(b).split('.').map(Number);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d}return 0}
-const URL_ATUALIZACAO='https://jhoonoliveira.github.io/harvest-invest/update.json';
-async function verificarAtualizacao(manual){
-  const U=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.CapacitorUpdater;
-  if(!U){if(manual)toast('Atualização automática só funciona no app instalado.');return}
-  try{const r=await fetch(URL_ATUALIZACAO+'?t='+Date.now());const j=await r.json();
-    if(j.version&&cmpVer(j.version,VERSAO_APP)>0){
-      if(manual)toast('Baixando a versão '+j.version+'…');
-      const b=await U.download({url:j.url,version:j.version});
-      if(manual){await U.set({id:b.id})}else{await U.next({id:b.id});toast('Versão '+j.version+' baixada. Ela entra na próxima vez que você abrir o app.')}
-    }else if(manual)toast('Você já está na versão mais nova ('+VERSAO_APP+').');
-  }catch(e){if(manual)toast('Não consegui verificar atualizações agora.')}
-}
+// ===================== APP ANDROID: CONTA GOOGLE, BACKUP NO DRIVE, BLOQUEIO E ATUALIZAÇÕES =====================
+// (mesmo mecanismo do ControlBético: login Google opcional, backup diário numa pasta do Drive do próprio usuário,
+//  PIN + digital, atualização automática e aviso quando é preciso baixar um APK novo)
+const GOOGLE_WEB_CLIENT=(window.HVVER&&HVVER.google)||'';
+const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.file',PASTA_DRIVE='Harvest Invest';
+const CONTA_KEY='harvest-conta';
+let C=(()=>{try{return JSON.parse(localStorage.getItem(CONTA_KEY))||{}}catch(e){return {}}})();
+function salvaConta(){try{localStorage.setItem(CONTA_KEY,JSON.stringify(C))}catch(e){}}
+let _tok=null,_tokExp=0,_glInit=false,_bloqueado=false,_bgDesde=0;
+const pad2=n=>String(n).padStart(2,'0');
+const temGoogle=()=>!!(C.conta&&!C.conta.semConta&&C.conta.email);
+const fechaSheet=()=>{const r=document.getElementById('sheetRoot');if(r)r.innerHTML=''};
+
+// ---------- telas cheias (login e PIN) ----------
+function telaCheia(id,html){let o=document.getElementById(id);if(!o){o=document.createElement('div');o.id=id;document.body.appendChild(o);}
+  o.style.cssText='position:fixed;inset:0;z-index:60;background:linear-gradient(160deg,#2F6B50,#1F4D3A 55%,#0E1813);color:#F2F6EF;overflow:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(24px + env(safe-area-inset-top,0px)) 24px calc(24px + env(safe-area-inset-bottom,0px));text-align:center;font-family:Figtree,system-ui,sans-serif';
+  o.innerHTML=html;return o;}
+const fechaTela=id=>{const o=document.getElementById(id);if(o)o.remove();};
+const logoGrande=(t=96)=>`<svg width="${t}" height="${t}" viewBox="0 0 24 24" aria-hidden="true"><rect x="0" y="0" width="24" height="24" rx="6" fill="#fff" fill-opacity=".12"/><g transform="translate(12 12) scale(.72) translate(-12 -13.25)"><path d="M12 22V9" stroke="#F2F6EF" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M12 13c-3 0-5-2-5-5 3 0 5 2 5 5zm0 0c3 0 5-2 5-5-3 0-5 2-5 5zm0-5c-2 0-3.5-1.5-3.5-3.5C10.5 4.5 12 6 12 8zm0 0c2 0 3.5-1.5 3.5-3.5C13.5 4.5 12 6 12 8z" fill="#E9C85A"/></g></svg>`;
+
+// ---------- Google ----------
+async function glInit(){if(_glInit)return;if(!GOOGLE_WEB_CLIENT)throw new Error('login Google ainda não configurado');await HVN.SocialLogin.initialize({google:{webClientId:GOOGLE_WEB_CLIENT,mode:'online'}});_glInit=true;}
+async function googleLogin(silencioso){await glInit();
+  const r=await HVN.SocialLogin.login({provider:'google',options:{scopes:[DRIVE_SCOPE],...(silencioso?{filterByAuthorizedAccounts:true,autoSelectEnabled:true}:{forcePrompt:false})}});
+  const res=r&&r.result||{};const at=res.accessToken&&res.accessToken.token;if(at){_tok=at;_tokExp=Date.now()+50*60e3;}
+  return{email:res.profile&&res.profile.email,nome:res.profile&&res.profile.name,foto:res.profile&&res.profile.imageUrl,token:at};}
+async function tokenDrive(){if(_tok&&Date.now()<_tokExp)return _tok;const r=await googleLogin(true);if(!r.token)throw new Error('sem-token');return r.token;}
+async function gapi(url,opt={},tentou){const t=await tokenDrive();const r=await fetch(url,{...opt,headers:{...(opt.headers||{}),Authorization:'Bearer '+t}});
+  if(r.status===401&&!tentou){_tok=null;return gapi(url,opt,true);}if(!r.ok)throw new Error('drive '+r.status+' '+(await r.text()).slice(0,200));return r;}
+
+// ---------- Drive ----------
+async function pastaDrive(){if(C.drive&&C.drive.pasta)return C.drive.pasta;
+  const q=encodeURIComponent(`name='${PASTA_DRIVE}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const l=await (await gapi(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive`)).json();
+  let id=l.files&&l.files[0]&&l.files[0].id;
+  if(!id){const c=await (await gapi('https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:PASTA_DRIVE,mimeType:'application/vnd.google-apps.folder'})})).json();id=c.id;}
+  C.drive=Object.assign(C.drive||{},{pasta:id});salvaConta();return id;}
+function dadosBackupTodas(){if(!S._ro)save();const todas={};META.carteiras.forEach(c=>{todas[c.id]=lerCarteira(c.id)});return {app:'Harvest Invest',versao:2,gerado:new Date().toISOString(),meta:META,carteiras:todas};}
+function temDados(){return META.carteiras.some(c=>{const d=lerCarteira(c.id);return (d.ops||[]).length||(d.provB3||[]).length})}
+function aplicarBackupTodas(o){
+  if(o.carteiras&&o.meta){META.carteiras.forEach(c=>{try{localStorage.removeItem(chaveDe(c.id))}catch(x){}});
+    for(const c of o.meta.carteiras){const d=Object.assign(clone(DEF),o.carteiras[c.id]||{});d.cfg=Object.assign(clone(DEF.cfg),(o.carteiras[c.id]||{}).cfg||{});delete d._ro;try{localStorage.setItem(chaveDe(c.id),JSON.stringify(d))}catch(x){}}
+    META={carteiras:o.meta.carteiras,ativa:o.meta.carteiras[0].id};salvarMeta();S=lerCarteira(META.ativa);}
+  else if(o.dados&&o.dados.ops){S=Object.assign(clone(DEF),o.dados,{cfg:Object.assign(clone(DEF.cfg),o.dados.cfg||{})});delete S._ro;save();}
+  else throw new Error('arquivo inválido');
+  POSC.clear();aplicarTema();UI.tab='inicio';render();}
+async function backupDrive(manual){if(!NATIVO||!temGoogle())return;if(!navigator.onLine){if(manual)toast('Sem internet agora — o backup será feito depois');return;}
+  try{if(manual)toast('Enviando backup para o Google Drive…');const pasta=await pastaDrive(),d=new Date();
+    const nome=`HarvestInvest-backup-${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}_${pad2(d.getHours())}h${pad2(d.getMinutes())}.json`;
+    const b='hv'+Date.now(),meta={name:nome,parents:[pasta],mimeType:'application/json'};
+    const body=`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(dadosBackupTodas())}\r\n--${b}--`;
+    await gapi('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+b},body});
+    C.drive=Object.assign(C.drive||{},{ultimo:Date.now(),arquivo:nome,erro:null});salvaConta();if(manual)toast('✓ Backup salvo no Drive');limpaAntigos().catch(()=>{});
+    if(UI.tab==='mais')render();}
+  catch(e){C.drive=Object.assign(C.drive||{},{erro:String(e.message||e).slice(0,120)});if(String(e.message).includes('404'))C.drive.pasta=null;salvaConta();
+    if(manual)toast('Não consegui salvar no Drive. Tente de novo.');}}
+async function listaBackups(){const pasta=await pastaDrive(),q=encodeURIComponent(`'${pasta}' in parents and trashed=false`);
+  const l=await (await gapi(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime desc&fields=files(id,name,createdTime,size)&pageSize=100`)).json();return l.files||[];}
+async function limpaAntigos(){const f=await listaBackups();for(const x of f.slice(40))await gapi(`https://www.googleapis.com/drive/v3/files/${x.id}`,{method:'DELETE'});}
+async function abrirRestaurar(){sheet(`<h3>Restaurar do Google Drive</h3><p class="muted">Buscando seus backups…</p>`);
+  try{const f=await listaBackups();
+    sheet(`<h3>Restaurar do Google Drive</h3>${f.length?`<p class="small muted" style="margin-top:0">Pasta “${PASTA_DRIVE}” no seu Drive. Escolha qual backup restaurar:</p><div class="list">${f.slice(0,40).map(x=>`<button class="item" onclick="restauraDrive('${x.id}','${esc(x.createdTime)}')"><div class="flex1"><b>${new Date(x.createdTime).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</b><div class="small muted ellip">${esc(x.name)} · ${Math.round((x.size||0)/1024)} KB</div></div><span class="muted">›</span></button>`).join('')}</div>`:'<p class="muted">Nenhum backup encontrado no seu Drive ainda.</p>'}`);}
+  catch(e){sheet(`<h3>Restaurar</h3><div class="alert warn">Não consegui acessar o Drive agora (${esc(String(e.message||e).slice(0,80))}).</div>`);}}
+async function restauraDrive(id,quando){if(!confirm(`Restaurar o backup de ${new Date(quando).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}? Os dados atuais deste celular serão substituídos.`))return;
+  try{const d=await (await gapi(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`)).json();aplicarBackupTodas(d);fechaSheet();toast('✓ Backup restaurado');}
+  catch(e){toast('Não consegui restaurar: '+String(e.message||e).slice(0,60));}}
+function autoBackup(){if(!NATIVO||!temGoogle()||C.backupAuto===false)return;if(Date.now()-((C.drive&&C.drive.ultimo)||0)>20*3600e3)backupDrive(false);}
+
+// ---------- tela de entrada (login) ----------
+function telaLogin(){telaCheia('hvLogin',`<div style="max-width:380px">${logoGrande(96)}<h1 style="margin:14px 0 4px;font-size:28px;font-family:'Bricolage Grotesque',Figtree,sans-serif">Harvest Invest</h1>
+  <div style="opacity:.92">Seus dividendos, do anúncio à conta.</div>
+  <button id="btnGoogle" style="margin-top:34px;width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1f2937;border:0;border-radius:14px;padding:15px;font-size:17px;font-weight:700">
+  <svg width="22" height="22" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Entrar com Google</button>
+  <div id="loginSt" style="margin-top:14px;min-height:22px;font-size:14px;opacity:.95"></div>
+  <button id="btnSemConta" style="margin-top:6px;width:100%;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:14px;padding:13px;font-size:15.5px;font-weight:600">Usar sem conta Google</button>
+  <div style="margin-top:26px;font-size:12.5px;opacity:.8;line-height:1.5">🔒 Seus dados ficam no seu celular. A conta Google é usada para entrar e para guardar os backups numa pasta “${PASTA_DRIVE}” no <b>seu</b> Google Drive. Sem conta, o app funciona igual, mas o backup é manual (arquivo).</div>
+  <div style="margin-top:18px;font-size:12px;opacity:.6">versão ${esc(VERSAO_APP)}</div></div>`);
+  document.getElementById('btnGoogle').onclick=fazerLogin;document.getElementById('btnSemConta').onclick=usarSemConta;}
+function usarSemConta(){if(!confirm('Usar sem conta Google?\n\n• O app funciona normalmente.\n• Não haverá backup automático no Drive — faça backups manuais em Mais › Configurações › Backup.\n• Você pode entrar com o Google depois, em Configurações.'))return;
+  C.conta={semConta:true,desde:Date.now()};salvaConta();fechaTela('hvLogin');render();if(!C.seguranca)configurarBloqueio(true);}
+async function vincularGoogle(){try{const r=await googleLogin(false);if(!r.email)throw new Error('sem e-mail');
+    C.conta={email:r.email,nome:r.nome||'',foto:r.foto||'',desde:Date.now()};salvaConta();toast('✓ Conta Google conectada');render();backupDrive(false);}
+  catch(e){toast('Não foi possível entrar com o Google agora');}}
+async function fazerLogin(){const st=document.getElementById('loginSt');st.textContent='Abrindo a conta Google…';
+  try{const r=await googleLogin(false);if(!r.email)throw new Error('sem e-mail');
+    C.conta={email:r.email,nome:r.nome||'',foto:r.foto||'',desde:Date.now()};salvaConta();
+    st.textContent='Procurando backups no seu Drive…';
+    let ult=null;try{const f=await listaBackups();ult=f[0]||null;}catch(e){}
+    fechaTela('hvLogin');render();
+    if(ult&&!temDados()){if(confirm(`Encontrei um backup no seu Google Drive de ${new Date(ult.createdTime).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}. Quer restaurar seus dados?`)){try{const d=await (await gapi(`https://www.googleapis.com/drive/v3/files/${ult.id}?alt=media`)).json();aplicarBackupTodas(d);toast('✓ Dados restaurados do Drive');}catch(e){toast('Não consegui restaurar agora');}}}
+    if(!C.seguranca)configurarBloqueio(true);else autoBackup();}
+  catch(e){st.innerHTML='Não foi possível entrar. Verifique a internet e tente de novo.<br><small style="opacity:.75">'+esc(String(e&&e.message||e).slice(0,90))+'</small>';}}
+async function sairConta(){if(!confirm('Sair da conta Google? Seus dados continuam no celular; para entrar de novo será preciso fazer login.'))return;
+  try{await glInit();await HVN.SocialLogin.logout({provider:'google'});}catch(e){}C.conta=null;_tok=null;salvaConta();telaLogin();}
+
+// ---------- bloqueio (PIN + digital) ----------
+async function hashPin(p){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('hv:'+p));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function bioDisponivel(){try{const r=await HVN.BiometricAuth.checkBiometry();return !!(r&&(r.isAvailable||r.strongBiometryIsAvailable));}catch(e){return false;}}
+function teclado(titulo,sub,onOk,extra=''){let v='';const html=`<div style="max-width:340px;width:100%">${logoGrande(64)}<h2 style="margin:12px 0 2px">${titulo}</h2><div style="opacity:.9;font-size:14px">${sub}</div>
+  <div id="pinDots" style="display:flex;gap:14px;justify-content:center;margin:22px 0"></div><div id="pinErr" style="min-height:20px;color:#fecaca;font-size:14px"></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:6px">${[1,2,3,4,5,6,7,8,9,'bio',0,'del'].map(k=>`<button data-k="${k}" style="height:64px;border-radius:18px;border:0;background:rgba(255,255,255,${k==='bio'||k==='del'?'.06':'.16'});color:#fff;font-size:${k==='bio'?'26':'24'}px;font-weight:700">${k==='del'?'⌫':k==='bio'?(extra.includes('bio')?'👆':''):k}</button>`).join('')}</div>
+  ${extra.includes('esqueci')?'<button id="pinEsq" style="margin-top:18px;background:none;border:0;color:#fff;opacity:.85;text-decoration:underline;font-size:14px">Esqueci o PIN</button>':''}</div>`;
+  const o=telaCheia('hvPin',html);const dots=()=>{o.querySelector('#pinDots').innerHTML=[0,1,2,3].map(i=>`<span style="width:16px;height:16px;border-radius:50%;background:${i<v.length?'#fff':'rgba(255,255,255,.3)'}"></span>`).join('');};dots();
+  o.querySelectorAll('button[data-k]').forEach(b=>b.onclick=async()=>{const k=b.dataset.k;if(k==='del'){v=v.slice(0,-1);dots();return;}if(k==='bio'){if(extra.includes('bio'))desbloqueioBio();return;}
+    if(v.length<4){v+=k;dots();if(v.length===4){const ok=await onOk(v);if(!ok){v='';dots();}}}});
+  const e=o.querySelector('#pinEsq');if(e)e.onclick=esqueciPin;return o;}
+function configurarBloqueio(primeiraVez){teclado('Crie um PIN de 4 números','Ele protege o app quando você abrir.',async p1=>{
+  teclado('Confirme o PIN','Digite o mesmo PIN de novo.',async p2=>{if(p1!==p2){document.getElementById('pinErr').textContent='Os PINs não conferem. Comece de novo.';setTimeout(()=>configurarBloqueio(primeiraVez),900);return false;}
+    C.seguranca={ativo:true,pin:await hashPin(p1),bio:false,minutos:1};salvaConta();fechaTela('hvPin');
+    if(await bioDisponivel()&&confirm('Quer usar a digital (ou o desbloqueio do celular) para abrir o app?')){try{await HVN.BiometricAuth.authenticate({reason:'Ativar desbloqueio por digital',cancelTitle:'Cancelar',allowDeviceCredential:true,androidTitle:'Harvest Invest'});C.seguranca.bio=true;salvaConta();toast('Digital ativada ✓');}catch(e){}}
+    else toast('PIN criado ✓');if(primeiraVez)autoBackup();if(UI.tab==='mais')render();return true;});return true;});
+  if(primeiraVez){const o=document.getElementById('hvPin');const p=document.createElement('button');p.textContent='Agora não';p.style.cssText='margin-top:16px;background:none;border:0;color:#fff;opacity:.85;text-decoration:underline;font-size:15px';p.onclick=()=>{C.seguranca={ativo:false};salvaConta();fechaTela('hvPin');autoBackup();};o.firstElementChild.appendChild(p);}}
+async function bloquear(){if(!NATIVO||!C.conta||!C.seguranca||!C.seguranca.ativo||_bloqueado)return;_bloqueado=true;
+  teclado('Harvest Invest','Digite seu PIN',async p=>{if(await hashPin(p)===C.seguranca.pin){desbloqueado();return true;}document.getElementById('pinErr').textContent='PIN incorreto';if(navigator.vibrate)navigator.vibrate(120);return false;},(C.seguranca.bio?'bio ':'')+'esqueci');
+  if(C.seguranca.bio)setTimeout(desbloqueioBio,350);}
+async function desbloqueioBio(){try{await HVN.BiometricAuth.authenticate({reason:'Desbloquear o Harvest Invest',cancelTitle:'Usar PIN',allowDeviceCredential:true,androidTitle:'Harvest Invest'});desbloqueado();}catch(e){}}
+function desbloqueado(){_bloqueado=false;fechaTela('hvPin');autoBackup();}
+async function esqueciPin(){if(!temGoogle()){if(!confirm('Para criar um PIN novo, confirme com o bloqueio de tela do celular (digital, padrão ou senha do aparelho).'))return;
+    try{await HVN.BiometricAuth.authenticate({reason:'Criar um PIN novo',cancelTitle:'Cancelar',allowDeviceCredential:true,androidTitle:'Harvest Invest'});_bloqueado=false;fechaTela('hvPin');configurarBloqueio(false);}
+    catch(e){toast('Não foi possível confirmar pelo bloqueio do celular');}return;}
+  if(!confirm('Para criar um PIN novo, confirme sua conta Google.'))return;try{const r=await googleLogin(false);if(r.email&&C.conta&&r.email.toLowerCase()===C.conta.email.toLowerCase()){_bloqueado=false;fechaTela('hvPin');configurarBloqueio(false);}else toast('Conta diferente da cadastrada');}catch(e){toast('Não foi possível confirmar a conta');}}
+async function ativaBio(el){if(!el.checked){C.seguranca.bio=false;salvaConta();return;}if(!(await bioDisponivel())){el.checked=false;toast('Digital não disponível neste celular');return;}
+  try{await HVN.BiometricAuth.authenticate({reason:'Ativar desbloqueio por digital',cancelTitle:'Cancelar',allowDeviceCredential:true,androidTitle:'Harvest Invest'});C.seguranca.bio=true;salvaConta();toast('Digital ativada ✓');}catch(e){el.checked=false;}}
+
+// ---------- atualização automática (e aviso quando precisa de APK novo) ----------
+const URL_ATUALIZA='https://github.com/jhoonoliveira/harvest-invest/releases/latest/download/atualizacao.json';
+const NATIVO_APP=(window.HVVER&&Number(HVVER.nativo))||0;
+let _updRodando=false;
+async function verificaAtualizacao(manual){if(!NATIVO||!HVN.Updater||_updRodando)return;
+  if(!manual&&Date.now()-(+localStorage.getItem('hv_upd_chk')||0)<3*3600e3)return;
+  if(!navigator.onLine){if(manual)toast('Sem internet agora');return;}
+  _updRodando=true;localStorage.setItem('hv_upd_chk',Date.now());
+  try{const r=await fetch(URL_ATUALIZA+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('http '+r.status);const u=await r.json();
+    console.log('HV_UPD remoto='+u.versao+' nativo='+u.nativo+' | local='+VERSAO_APP+' nativo='+NATIVO_APP);
+    if(Number(u.nativo)>NATIVO_APP){avisoApk(u,manual);return;}
+    if(cmpVer(u.versao,VERSAO_APP)<=0){if(manual)toast('✓ Você já está na versão mais recente ('+VERSAO_APP+')');return;}
+    if(manual)toast('Baixando a versão '+u.versao+'…');
+    const b=await HVN.Updater.download({url:u.zip,version:u.versao,checksum:u.sha256});
+    if(manual){toast('Atualizando…');setTimeout(()=>HVN.Updater.set({id:b.id}),700);return;}
+    await HVN.Updater.next({id:b.id});localStorage.setItem('hv_upd_pronta',u.versao);localStorage.setItem('hv_upd_id',b.id);
+    toast('✓ Atualização '+u.versao+' baixada — entra na próxima vez que abrir o app');}
+  catch(e){console.log('HV_UPD_ERRO '+(e&&e.message||e));if(manual)toast('Não consegui verificar agora. Tente mais tarde.');}
+  finally{_updRodando=false;}}
+function avisoApk(u,manual){if(!manual&&Date.now()-(+localStorage.getItem('hv_apk_aviso')||0)<20*3600e3)return;localStorage.setItem('hv_apk_aviso',Date.now());
+  sheet(`<h3>⬆️ Nova versão do app</h3><p>A versão <b>${esc(u.versao)}</b> traz mudanças que precisam de uma instalação rápida. Seus dados continuam no celular.</p>
+  <ol class="small" style="line-height:1.6;padding-left:18px"><li>Toque em <b>Baixar nova versão</b> e espere o download terminar.</li><li>Abra o arquivo baixado e toque em <b>Instalar</b> (ou “Atualizar”).</li></ol>
+  <button class="btn gold full" style="margin-top:8px" onclick="window.open('${esc(u.apk)}','_system');fechaSheet()">⬇️ Baixar nova versão</button>
+  <button class="btn ghost full" onclick="fechaSheet()">Agora não</button>`);}
+function iniciaAtualizacao(){if(!NATIVO||!HVN.Updater)return;
+  try{HVN.Updater.notifyAppReady();}catch(e){}
+  const vista=localStorage.getItem('hv_ver_vista');if(vista&&vista!==VERSAO_APP&&cmpVer(VERSAO_APP,vista)>0)setTimeout(()=>toast('✅ App atualizado para a versão '+VERSAO_APP),1200);
+  localStorage.setItem('hv_ver_vista',VERSAO_APP);
+  const pr=localStorage.getItem('hv_upd_pronta'),pid=localStorage.getItem('hv_upd_id');
+  if(pr&&cmpVer(pr,VERSAO_APP)<=0){localStorage.removeItem('hv_upd_pronta');localStorage.removeItem('hv_upd_id');}
+  else if(pr&&pid&&!localStorage.getItem('hv_upd_tentou_'+pr)){localStorage.setItem('hv_upd_tentou_'+pr,'1');HVN.Updater.set({id:pid}).catch(()=>{});return;}
+  setTimeout(()=>verificaAtualizacao(false),5000);
+  HVN.App.addListener('resume',()=>verificaAtualizacao(false));}
+
+// ---------- integração com o Android ----------
+function iniciaNativo(){if(!NATIVO)return;
+  iniciaAtualizacao();
+  HVN.App.addListener('backButton',()=>{if(document.getElementById('hvPin')||document.getElementById('hvLogin'))return HVN.App.minimizeApp();
+    const sr=document.getElementById('sheetRoot');if(sr&&sr.innerHTML){sr.innerHTML='';return;}
+    if(UI.tab==='mais'&&UI.sub.mais){UI.sub.mais=null;render();return;}
+    if(UI.tab!=='inicio'){UI.tab='inicio';render();window.scrollTo(0,0);return;}HVN.App.minimizeApp();});
+  HVN.App.addListener('appStateChange',s=>{if(!s.isActive){_bgDesde=Date.now();return;}
+    if(_bgDesde&&Date.now()-_bgDesde>((C.seguranca&&C.seguranca.minutos)||1)*60e3)bloquear();else autoBackup();_bgDesde=0;});
+  if(!C.conta)telaLogin();else if(C.seguranca&&C.seguranca.ativo)bloquear();else autoBackup();}
+
+// ---------- seção em Configurações ----------
+function secaoContaHTML(){if(!NATIVO)return'';const d=C.drive||{},sg=C.seguranca||{};
+  const bloqueio=`<div class="panel"><h3>🔒 Bloqueio do app</h3>
+   <label class="row between small" style="margin:6px 0"><span>Pedir PIN ao abrir</span><input type="checkbox" style="width:auto" ${sg.ativo?'checked':''} onchange="if(this.checked)configurarBloqueio(false);else{C.seguranca={ativo:false};salvaConta();toast('Bloqueio desativado')}"></label>
+   ${sg.ativo?`<label class="row between small" style="margin:6px 0"><span>Usar digital / desbloqueio do celular</span><input type="checkbox" style="width:auto" ${sg.bio?'checked':''} onchange="ativaBio(this)"></label>
+   <label class="row between small" style="margin:6px 0"><span>Bloquear depois de</span><select style="width:150px" onchange="C.seguranca.minutos=Number(this.value);salvaConta()">${[[0.05,'na hora'],[1,'1 minuto'],[5,'5 minutos'],[15,'15 minutos']].map(([v,t])=>`<option value="${v}" ${sg.minutos==v?'selected':''}>${t}</option>`).join('')}</select></label>
+   <button class="btn sec full" style="margin-top:6px" onclick="configurarBloqueio(false)">Trocar PIN</button>`:''}</div>`;
+  if(!temGoogle())return `<div class="panel"><h3>☁️ Conta Google e backup</h3><p class="small muted" style="margin-top:0">Você está usando o app <b>sem conta Google</b>. Seus dados ficam só neste celular — faça backups manuais em “Backup” abaixo, ou conecte sua conta para ter backup automático no seu Google Drive.</p>
+   <button class="btn gold full" onclick="vincularGoogle()">Entrar com Google</button></div>${bloqueio}`;
+  return `<div class="panel"><h3>☁️ Conta Google e backup</h3>
+   ${C.conta?`<div class="row" style="margin:8px 0">${C.conta.foto?`<img src="${esc(C.conta.foto)}" alt="" style="width:40px;height:40px;border-radius:50%">`:''}<div><b>${esc(C.conta.nome||'')}</b><div class="small muted">${esc(C.conta.email)}</div></div></div>`:''}
+   <div class="row between small"><span>Último backup no Drive</span><b>${d.ultimo?new Date(d.ultimo).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'ainda não'}</b></div>
+   ${d.erro?`<div class="small" style="color:var(--warn)">⚠️ Última tentativa falhou — tentarei de novo.</div>`:''}
+   <label class="row between small" style="margin:8px 0"><span>Backup automático diário<br><span class="muted">Pasta “${PASTA_DRIVE}” no seu Google Drive</span></span><input type="checkbox" style="width:auto" ${C.backupAuto===false?'':'checked'} onchange="C.backupAuto=this.checked;salvaConta()"></label>
+   <div class="row" style="margin-top:8px"><button class="btn sec flex1" onclick="backupDrive(true)">☁️ Fazer backup agora</button><button class="btn sec flex1" onclick="abrirRestaurar()">⤵️ Restaurar</button></div>
+   <button class="btn danger full" style="margin-top:8px" onclick="sairConta()">Sair da conta</button></div>${bloqueio}`;}
+
 function provProvEntradas(base){
   return (S.provProv||[]).filter(p=>!base.some(b=>b.t===p.t&&b.tipo===p.tipo&&p.pag&&Math.abs(new Date(b.pag)-new Date(p.pag))<=5*864e5)).map(p=>{
     let bruto=p.liq,ir=0;if(p.tipo==='jcp'){const a=aliqJcp(Object.assign({},p,{pag:p.pag||HOJE}));bruto=p.liq/(1-a);ir=bruto-p.liq}
@@ -1547,11 +1723,11 @@ function vConfig(){
   const hr=v=>v?dt(v.slice(0,10))+' '+new Date(v).toTimeString().slice(0,5):'ainda não';
   const fontes=[['Cotações',(S.cfg.brapiToken?'brapi, com reserva no Yahoo':'Yahoo Finance (sem token)'),hr(S.cfg.ultimaCotacao)],['Proventos anunciados e provisionados','Status Invest',hr(S.cfg.ultimosProventos)+((S.cfg.falhaProventos||[]).length?' · sem resposta: '+S.cfg.falhaProventos.slice(0,3).join(', '):'')],['Recebidos, operações e eventos','Extratos da B3 e notas que você importa','—']];
   on('#btnAtualizarTudo','click',()=>{atualizarCotacoes(true);buscarProventosOnline()});
-  on('#btnVerAtual','click',()=>verificarAtualizacao(true));
+  on('#btnVerAtual','click',()=>verificaAtualizacao(true));
   on('[data-cfg]','change',e=>{const k=e.target.dataset.cfg;S.cfg[k]=e.target.type==='checkbox'?e.target.checked:parseBR(e.target.value);save();toast('Configuração salva. Valores recalculados.');render()});
   // o backup leva todas as carteiras; backups antigos (de uma carteira só) continuam sendo aceitos
   const textoBackup=()=>{if(!S._ro)save();const todas={};META.carteiras.forEach(c=>{todas[c.id]=lerCarteira(c.id)});return JSON.stringify({app:'Harvest Invest',versao:2,gerado:new Date().toISOString(),meta:META,carteiras:todas,dados:S._ro?todas.principal:S})};
-  on('#btnBackupArq','click',async()=>{const P=window.Capacitor&&window.Capacitor.Plugins;if(NATIVO&&P&&P.Filesystem&&P.Share){try{const nome=`harvest-invest-backup-${HOJE}.json`;const w=await P.Filesystem.writeFile({path:nome,data:textoBackup(),directory:'CACHE',encoding:'utf8'});await P.Share.share({title:'Backup Harvest Invest',files:[w.uri]});S.cfg.ultimoBackup=new Date().toISOString();save();render()}catch(e){if(!/cancel/i.test(String(e&&e.message)))toast('Não consegui gerar o arquivo. Use a opção de texto.')}return}try{const blob=new Blob([textoBackup()],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`harvest-invest-backup-${HOJE}.json`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},1500);S.cfg.ultimoBackup=new Date().toISOString();save();toast('Backup salvo na pasta Downloads.')}catch(e){toast('Não consegui gerar o arquivo. Use a opção de texto abaixo.')}});
+  on('#btnBackupArq','click',async()=>{const P=window.HVN;if(NATIVO&&P&&P.Filesystem&&P.Share){try{const nome=`harvest-invest-backup-${HOJE}.json`;const w=await P.Filesystem.writeFile({path:nome,data:textoBackup(),directory:P.Directory.Cache,encoding:P.Encoding.UTF8});await P.Share.share({title:'Backup Harvest Invest',files:[w.uri]});S.cfg.ultimoBackup=new Date().toISOString();save();render()}catch(e){if(!/cancel/i.test(String(e&&e.message)))toast('Não consegui gerar o arquivo. Use a opção de texto.')}return}try{const blob=new Blob([textoBackup()],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`harvest-invest-backup-${HOJE}.json`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},1500);S.cfg.ultimoBackup=new Date().toISOString();save();toast('Backup salvo na pasta Downloads.')}catch(e){toast('Não consegui gerar o arquivo. Use a opção de texto abaixo.')}});
   on('#btnRestArq','click',()=>$('#arqBackup').click());
   on('#arqBackup','change',async e=>{const f=e.target.files[0];if(!f)return;try{const o=JSON.parse(await f.text());if(!o.dados&&!o.carteiras)throw 0;
     const quando=o.gerado?dt(o.gerado.slice(0,10)):'data desconhecida';
@@ -1569,6 +1745,7 @@ function vConfig(){
   on('#btnCotCfg','click',()=>{S.cfg.brapiToken=$('#brapiTk').value.trim();save();atualizarCotacoes()});
   on('#selTema','change',e=>{S.tema=e.target.value;save();aplicarTema()});
   return `<h2 style="margin-top:6px">Configurações</h2>
+  ${secaoContaHTML()}
   <div class="panel"><h3>Impostos</h3><p class="small muted" style="margin-top:0">Regras de 2026. Ajuste aqui se a lei mudar, sem esperar versão nova.</p>
   <div class="grid2"><div><label class="f" for="c1">JCP a partir de 2026 (%)</label><input id="c1" data-cfg="jcp" inputmode="decimal" value="${nf2.format(S.cfg.jcp)}"></div><div><label class="f" for="c2">JCP antes de 2026 (%)</label><input id="c2" data-cfg="jcpAnt" inputmode="decimal" value="${nf2.format(S.cfg.jcpAnt)}"></div></div>
   <div class="grid2"><div><label class="f" for="c3">Dividendo: limite mensal por empresa (R$)</label><input id="c3" data-cfg="divLim" inputmode="decimal" value="${nf2.format(S.cfg.divLim)}"></div><div><label class="f" for="c4">Retenção acima do limite (%)</label><input id="c4" data-cfg="divAliq" inputmode="decimal" value="${nf2.format(S.cfg.divAliq)}"></div></div>
@@ -1611,7 +1788,7 @@ if(META.ativa!=='principal'){S=META.ativa==='todas'?consolidar():lerCarteira(MET
 aplicarTema();
 if(!S._ro){try{aplicarConhecidos();incorporarAutomatico()}catch(e){}}
 if(NATIVO){
-  setTimeout(()=>verificarAtualizacao(false),4000);
+  iniciaNativo();
   const velho=v=>!v||(Date.now()-new Date(v).getTime())>6*3600e3;
   setTimeout(()=>{if(S._ro)return;if(velho(S.cfg.ultimaCotacao)||(pregaoAberto()&&Date.now()-new Date(S.cfg.ultimaCotacao||0).getTime()>5*60e3))atualizarCotacoes(true);iniciarAutoCotacao();if(velho(S.cfg.ultimosProventos))buscarProventosOnline(true)},1500);
 }
