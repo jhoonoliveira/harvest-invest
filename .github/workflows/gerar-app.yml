@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -17,37 +17,57 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      versao: ${{ steps.ver.outputs.versao }}
     steps:
       - uses: actions/checkout@v5
-
       - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-
+        with: { node-version: 22 }
       - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
+        with: { distribution: temurin, java-version: 21 }
 
-      - name: Licencas do Android SDK
+      - name: Versão
+        id: ver
         run: |
-          SDKM=$(ls $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
-          echo "Usando $SDKM"
-          yes | "$SDKM" --licenses > /dev/null || true
+          V="1.0.${GITHUB_RUN_NUMBER}"
+          echo "versao=$V" >> $GITHUB_OUTPUT
+          echo "VERSAO=$V" >> $GITHUB_ENV
+          echo "NATIVO=$(cat nativo.txt | tr -d ' \n\r')" >> $GITHUB_ENV
+          echo "GOOGLE=$(cat google-client.txt | tr -d ' \n\r')" >> $GITHUB_ENV
 
       - name: Montar o app
         run: |
-          VERSAO="1.0.${GITHUB_RUN_NUMBER}"
-          echo "VERSAO=$VERSAO" >> $GITHUB_ENV
-          mkdir -p www/lib assets
+          mkdir -p www/lib
           cp index.html www/index.html
-          sed -i "s/__VERSAO__/${VERSAO}/g" www/index.html
           npm install --no-audit --no-fund
+          npm run bundle
           cp node_modules/pdfjs-dist/build/pdf.min.js www/lib/
           cp node_modules/pdfjs-dist/build/pdf.worker.min.js www/lib/
           cp node_modules/xlsx/dist/xlsx.full.min.js www/lib/
-          sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin zip
+          echo "window.HVVER={versao:'${VERSAO}',nativo:${NATIVO},google:'${GOOGLE}'};" > www/versao.js
+          cat www/versao.js
+
+      - name: Pacote de atualização automática
+        run: |
+          (cd www && zip -qr -9 ../bundle.zip .)
+          R="https://github.com/${GITHUB_REPOSITORY}/releases"
+          SHA=$(sha256sum bundle.zip | cut -d' ' -f1)
+          printf '{"versao":"%s","nativo":%s,"zip":"%s/download/v%s/bundle.zip","sha256":"%s","apk":"%s/latest/download/HarvestInvest.apk"}\n' "$VERSAO" "$NATIVO" "$R" "$VERSAO" "$SHA" "$R" > atualizacao.json
+          cat atualizacao.json
+
+      - name: Licenças do Android SDK
+        run: |
+          SDKM=$(ls $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+
+      - name: Criar projeto Android
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin
           npx cap add android
+          mkdir -p android/app/src/main/java/br/com/jhoon/harvestinvest
+          cp android-src/MainActivity.java android/app/src/main/java/br/com/jhoon/harvestinvest/MainActivity.java
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.USE_BIOMETRIC" />#' $M
           RES=android/app/src/main/res
           for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
             n=${d%%:*}; r=${d#*:}; ic=${r%%:*}; fg=${r#*:}
@@ -56,50 +76,48 @@ jobs:
             rsvg-convert -w $fg -h $fg icon-foreground.svg -o $RES/mipmap-$n/ic_launcher_foreground.png
           done
           sed -i 's/#FFFFFF/#1F4D3A/I' $RES/values/ic_launcher_background.xml
+          G=android/app/build.gradle
+          sed -i "s/versionCode 1$/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"1.0\"/versionName \"${VERSAO}\"/" $G
+          grep -n "versionCode\|versionName" $G
           npx cap sync android
-          sed -i "s/versionCode 1$/versionCode ${GITHUB_RUN_NUMBER}/" android/app/build.gradle
-          sed -i "s/versionName \"1.0\"/versionName \"${VERSAO}\"/" android/app/build.gradle
 
-      - name: Gerar o APK
-        working-directory: android
-        run: ./gradlew assembleRelease --no-daemon -q
+      - name: Compilar
+        run: cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon -q
 
-      - name: Assinar o APK
+      - name: Assinar
         env:
           CHAVE_BASE64: ${{ secrets.CHAVE_BASE64 }}
           SENHA_CHAVE: ${{ secrets.SENHA_CHAVE }}
         run: |
-          if [ -z "$CHAVE_BASE64" ] || [ -z "$SENHA_CHAVE" ]; then echo "::error::Faltam os secrets CHAVE_BASE64 e SENHA_CHAVE (Settings > Secrets and variables > Actions)"; exit 1; fi
-          echo "$CHAVE_BASE64" | base64 -d > chave.p12
+          printf '%s' "$CHAVE_BASE64" | tr -d ' \r\n' | base64 -d > chave.p12
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
-          $BT/zipalign -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk alinhado.apk
-          $BT/apksigner sign --ks chave.p12 --ks-type PKCS12 --ks-pass env:SENHA_CHAVE --out harvest-invest.apk alinhado.apk
-          $BT/apksigner verify harvest-invest.apk
+          IN=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          $BT/zipalign -p -f 4 "$IN" alinhado.apk
+          $BT/apksigner sign --ks chave.p12 --ks-type PKCS12 --ks-pass env:SENHA_CHAVE --out HarvestInvest.apk alinhado.apk
+          $BT/apksigner verify --print-certs HarvestInvest.apk | grep -i "SHA-1"
           rm -f chave.p12
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: harvest-invest-apk
-          path: harvest-invest.apk
+      - name: Publicar a versão (APK + atualização automática)
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: gh release create "v${VERSAO}" HarvestInvest.apk bundle.zip atualizacao.json --repo "$GITHUB_REPOSITORY" --title "Harvest Invest ${VERSAO}" --notes "Versão gerada automaticamente."
 
-      - name: Preparar a página de atualização
+      - name: Página de download
         run: |
           mkdir -p site
-          (cd www && zip -qr "../site/app-${VERSAO}.zip" .)
-          cp harvest-invest.apk site/harvest-invest.apk
-          echo "{\"version\":\"${VERSAO}\",\"url\":\"https://jhoonoliveira.github.io/harvest-invest/app-${VERSAO}.zip\"}" > site/update.json
           cat > site/index.html <<HTML
           <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
           <title>Harvest Invest</title>
           <body style="font-family:system-ui;background:#1F4D3A;color:#F2F6EF;text-align:center;padding:40px 20px">
           <h1>Harvest Invest</h1><p>Versão ${VERSAO}</p>
-          <p><a style="display:inline-block;background:#E9C85A;color:#1b1404;padding:14px 22px;border-radius:12px;font-weight:700;text-decoration:none" href="harvest-invest.apk">Baixar o app (APK)</a></p>
+          <p><a style="display:inline-block;background:#E9C85A;color:#1b1404;padding:14px 22px;border-radius:12px;font-weight:700;text-decoration:none" href="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/HarvestInvest.apk">Baixar o app (APK)</a></p>
           <p style="opacity:.8;font-size:14px">Depois de instalado, as novas versões chegam sozinhas.</p></body>
           HTML
 
+      - name: Páginas de privacidade e termos
+        run: cp privacidade.html termos.html site/
+
       - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
+        with: { path: site }
 
   publicar:
     needs: build
