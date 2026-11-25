@@ -2,10 +2,11 @@
   "appId": "br.com.jhoon.harvestinvest",
   "appName": "Harvest Invest",
   "webDir": "www",
-  "android": { "allowMixedContent": false },
+  "android": { "allowMixedContent": false, "backgroundColor": "#0E1813" },
   "plugins": {
     "CapacitorHttp": { "enabled": true },
-    "CapacitorUpdater": { "autoUpdate": false, "resetWhenUpdate": false },
+    "CapacitorUpdater": { "autoUpdate": false, "statsUrl": "", "resetWhenUpdate": true, "appReadyTimeout": 15000, "autoDeleteFailed": true, "autoDeletePrevious": true },
     "SplashScreen": { "launchShowDuration": 0 }
-  }
+  },
+  "loggingBehavior": "production"
 }
