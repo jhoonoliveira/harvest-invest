@@ -75,6 +75,7 @@ h3{font-size:16px;margin:0 0 6px}
 .stalk .m{font-size:11px;margin-top:4px;opacity:.8}
 .stalk.cur .m{opacity:1;font-weight:600;color:var(--grain-soft)}
 .stalk.cur .b{outline:2px solid var(--grain-soft);outline-offset:2px}
+.mini{background:none;border:0;padding:2px 4px;font-size:15px;cursor:pointer;line-height:1}
 .updbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#2F6B50;color:#F2F6EF;font-size:14px;max-width:520px;margin:0 auto}
 .pilula{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin:0 0 10px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer;text-align:left}
 .heroGrid{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:8px}
@@ -945,13 +946,45 @@ function abrirAtivo(t){
     <button class="btn ghost" style="padding:4px 0" onclick="UI.histAsc=!UI.histAsc;const y=document.querySelector('.sheet').scrollTop;abrirAtivo('${t}');setTimeout(()=>{const sh=document.querySelector('.sheet');if(sh)sh.scrollTop=y},0)">${UI.histAsc?'Mais antigas primeiro ⇅':'Mais recentes primeiro ⇅'}</button></div>
   ${historicoAtivo(t)}`);
 }
+// ---------- editar / excluir lançamentos manuais (compras/vendas manuais e ajustes de preço médio) ----------
+function reabrirAtivo(t){save();POSC.clear();render();abrirAtivo(t);setTimeout(()=>{const h=document.getElementById('histAtivo');if(h)h.scrollIntoView()},50)}
+function editarLanc(t,k,id){
+  if(k==='ev'){const e=S.eventos.find(x=>x.id===id);if(!e)return;
+    sheet(`<h3>Editar ajuste de preço médio · ${t}</h3>
+    <label class="f" for="edPm">Preço médio (R$)</label><input id="edPm" inputmode="decimal" value="${nf2.format(e.pm)}">
+    <label class="f" for="edD">Vale a partir de</label><input id="edD" type="date" value="${e.dataEx}">
+    <div class="row" style="margin-top:14px"><button class="btn sec" onclick="abrirAtivo('${t}')">Cancelar</button><button class="btn gold flex1" id="edOk">Salvar</button></div>`);
+    document.getElementById('edOk').onclick=()=>{const v=parseBR(document.getElementById('edPm').value),d=document.getElementById('edD').value;if(!v||!d){toast('Preencha o preço médio e a data.');return}
+      e.pm=v;e.dataEx=d;e.desc=`Preço médio ajustado para R$ ${nf2.format(v)}`;reabrirAtivo(t);toast('Ajuste atualizado. Preço médio recalculado.')};return;}
+  const o=S.ops.find(x=>x.id===id);if(!o)return;
+  sheet(`<h3>Editar lançamento · ${t}</h3>
+  <div class="grid2"><div><label class="f" for="edTipo">Operação</label><select id="edTipo"><option value="C" ${o.tipo==='C'?'selected':''}>Compra</option><option value="V" ${o.tipo==='V'?'selected':''}>Venda</option></select></div>
+  <div><label class="f" for="edD">Data</label><input id="edD" type="date" value="${o.d}"></div></div>
+  <div class="grid2"><div><label class="f" for="edQ">Quantidade</label><input id="edQ" inputmode="decimal" value="${String(o.q).replace('.',',')}"></div>
+  <div><label class="f" for="edP">Preço (R$)</label><input id="edP" inputmode="decimal" value="${nf2.format(o.p)}"></div></div>
+  <label class="f" for="edC">Custos (R$)</label><input id="edC" inputmode="decimal" value="${nf2.format(o.c||0)}">
+  <div class="row" style="margin-top:14px"><button class="btn sec" onclick="abrirAtivo('${t}')">Cancelar</button><button class="btn gold flex1" id="edOk">Salvar</button></div>`);
+  document.getElementById('edOk').onclick=()=>{const tipo=document.getElementById('edTipo').value,d=document.getElementById('edD').value,q=parseBR(document.getElementById('edQ').value),pr=parseBR(document.getElementById('edP').value),c=parseBR(document.getElementById('edC').value);
+    if(!d||!q||!pr){toast('Preencha data, quantidade e preço.');return}
+    const bak=Object.assign({},o);Object.assign(o,{tipo,d,q,p:pr,c});POSC.clear();
+    if(tipo==='V'&&pos(t,d).q<-1e-6){Object.assign(o,bak);POSC.clear();toast('Essa venda deixaria a posição negativa nessa data.');return}
+    reabrirAtivo(t);toast('Lançamento atualizado. Preço médio recalculado.')};}
+function excluirLanc(t,k,id){
+  if(k==='ev'){const e=S.eventos.find(x=>x.id===id);if(!e)return;
+    if(!confirm(`Excluir o ajuste de preço médio de ${dt(e.dataEx)} (R$ ${nf2.format(e.pm)})? O preço médio volta a ser calculado sem ele.`))return;
+    S.eventos=S.eventos.filter(x=>x.id!==id);if(e.lote&&!S.eventos.some(x=>x.lote===e.lote)&&!S.ops.some(x=>x.lote===e.lote))S.lotes=S.lotes.filter(l=>l.id!==e.lote);
+    reabrirAtivo(t);toast('Ajuste excluído. Preço médio recalculado.');return;}
+  const o=S.ops.find(x=>x.id===id);if(!o)return;
+  if(!confirm(`Excluir a ${o.tipo==='C'?'compra':'venda'} de ${qtd(o.q)} ${t} em ${dt(o.d)} a R$ ${nf2.format(o.p)}?`))return;
+  S.ops=S.ops.filter(x=>x.id!==id);if(o.lote&&!S.ops.some(x=>x.lote===o.lote)&&!S.eventos.some(x=>x.lote===o.lote))S.lotes=S.lotes.filter(l=>l.id!==o.lote);
+  reabrirAtivo(t);toast('Lançamento excluído. Preço médio recalculado.');}
 function contaMovs(t){return S.ops.filter(o=>o.t===t).length+eventosAplicados().filter(e=>e.t===t||e.para===t).length}
 function historicoAtivo(t){
   const ORIG={b3:'B3',nota:'Nota',manual:'Manual',saldo:'Saldo anterior'};
   const L=[];
-  S.ops.filter(o=>o.t===t).forEach(o=>L.push({d:o.d,ev:o.tipo==='C'?'Compra':'Venda',q:o.tipo==='C'?o.q:-o.q,val:'R$ '+nf2.format(o.p),c:o.c||0,orig:(ORIG[o.orig]||'Manual')+(o.notaLote||o.conferidoB3?' + nota':'')}));
+  S.ops.filter(o=>o.t===t).forEach(o=>L.push({d:o.d,ev:o.tipo==='C'?'Compra':'Venda',q:o.tipo==='C'?o.q:-o.q,val:'R$ '+nf2.format(o.p),c:o.c||0,orig:(ORIG[o.orig]||'Manual')+(o.notaLote||o.conferidoB3?' + nota':''),ed:(o.orig==='manual'||o.orig==='saldo'||!o.orig)?{k:'op',id:o.id}:null}));
   eventosAplicados().filter(e=>e.t===t||e.para===t).forEach(e=>{
-    const ant=pos(t,diaAntes(e.dataEx)).q; const r={d:e.dataEx,c:0,orig:e.origem||'Manual',val:''};
+    const ant=pos(t,diaAntes(e.dataEx)).q; const r={d:e.dataEx,c:0,orig:e.origem||'Manual',val:'',ed:(e.tipo==='ajuste_pm'||e.origem==='Manual')?{k:'ev',id:e.id}:null};
     switch(e.tipo){
       case 'bonif_qtd': Object.assign(r,{ev:'Bonificação',q:e.q,val:e.custo!=null?'custo R$ '+nf2.format(e.custo):'custo pendente'});break;
       case 'bonificacao': Object.assign(r,{ev:'Bonificação',q:Math.floor(ant*e.fator),val:'custo R$ '+nf2.format(e.custo||0)});break;
@@ -977,7 +1010,7 @@ function historicoAtivo(t){
   if(!L.length) return '<div class="panel muted small">Sem movimentações.</div>';
   const fq=v=>v?(v>0?'+':'−')+qtd(Math.abs(Math.round(v*1000)/1000)):'—';
   return `<div class="tbl-wrap"><table><tr><th>Data</th><th>Movimentação</th><th class="n">Qtd</th><th class="n">Preço / valor</th><th class="n">Custos</th><th class="n">Posição</th><th>Origem</th></tr>
-  ${L.map(r=>`<tr><td>${dt(r.d)}</td><td>${esc(r.ev)}</td><td class="n" style="color:${r.q>0?'var(--ok)':r.q<0?'var(--bad)':'inherit'}">${fq(r.q)}</td><td class="n">${esc(r.val)}</td><td class="n">${r.c?nf2.format(r.c):'—'}</td><td class="n">${qtd(Math.round(pos(t,r.d).q*1000)/1000)}</td><td>${esc(r.orig)}</td></tr>`).join('')}</table></div>
+  ${L.map(r=>`<tr><td>${dt(r.d)}</td><td>${esc(r.ev)}${r.ed?` <span style="white-space:nowrap"><button class="mini" title="Editar" aria-label="Editar" onclick="editarLanc('${t}','${r.ed.k}','${r.ed.id}')">✏️</button><button class="mini" title="Excluir" aria-label="Excluir" onclick="excluirLanc('${t}','${r.ed.k}','${r.ed.id}')">🗑️</button></span>`:''}</td><td class="n" style="color:${r.q>0?'var(--ok)':r.q<0?'var(--bad)':'inherit'}">${fq(r.q)}</td><td class="n">${esc(r.val)}</td><td class="n">${r.c?nf2.format(r.c):'—'}</td><td class="n">${qtd(Math.round(pos(t,r.d).q*1000)/1000)}</td><td>${esc(r.orig)}</td></tr>`).join('')}</table></div>
   <p class="small muted">A coluna Posição mostra a quantidade no fim de cada dia, já com todos os eventos.</p>`;
 }
 function magico(t){const u=ultimoRendimento(t);const c=ativo(t).cot;return u&&u.vUnit&&c?Math.ceil(c/u.vUnit):'—'}
