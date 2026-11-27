@@ -74,7 +74,7 @@ jobs:
             rsvg-convert -w $ic -h $ic icon-round.svg -o $RES/mipmap-$n/ic_launcher_round.png
             rsvg-convert -w $fg -h $fg icon-foreground.svg -o $RES/mipmap-$n/ic_launcher_foreground.png
           done
-          sed -i 's/#FFFFFF/#1F4D3A/I' $RES/values/ic_launcher_background.xml
+          sed -i 's/#FFFFFF/#1E4B2C/I' $RES/values/ic_launcher_background.xml
           G=android/app/build.gradle
           sed -i "s/versionCode 1$/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"1.0\"/versionName \"${VERSAO}\"/" $G
           grep -n "versionCode\|versionName" $G
@@ -98,16 +98,16 @@ jobs:
 
       - name: Publicar a versão (APK + atualização automática)
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
-        run: gh release create "v${VERSAO}" HarvestInvest.apk bundle.zip atualizacao.json --repo "$GITHUB_REPOSITORY" --title "Harvest Invest ${VERSAO}" --notes "Versão gerada automaticamente."
+        run: gh release create "v${VERSAO}" HarvestInvest.apk bundle.zip atualizacao.json --repo "$GITHUB_REPOSITORY" --title "Aportô ${VERSAO}" --notes "Versão gerada automaticamente."
 
       - name: Página de download
         run: |
           mkdir -p site
           cat > site/index.html <<HTML
           <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>Harvest Invest</title>
-          <body style="font-family:system-ui;background:#1F4D3A;color:#F2F6EF;text-align:center;padding:40px 20px">
-          <h1>Harvest Invest</h1><p>Versão ${VERSAO}</p>
+          <title>Aportô</title>
+          <body style="font-family:system-ui;background:#1E4B2C;color:#F2F6EF;text-align:center;padding:40px 20px">
+          <h1>Aportô</h1><p>Versão ${VERSAO}</p>
           <p><a style="display:inline-block;background:#E9C85A;color:#1b1404;padding:14px 22px;border-radius:12px;font-weight:700;text-decoration:none" href="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/HarvestInvest.apk">Baixar o app (APK)</a></p>
           <p style="opacity:.8;font-size:14px">Depois de instalado, as novas versões chegam sozinhas.</p></body>
           HTML
