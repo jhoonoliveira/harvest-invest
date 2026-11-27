@@ -1,8 +1,8 @@
 {
   "appId": "br.com.jhoon.harvestinvest",
-  "appName": "Harvest Invest",
+  "appName": "Aportô",
   "webDir": "www",
-  "android": { "allowMixedContent": false, "backgroundColor": "#0E1813" },
+  "android": { "allowMixedContent": false, "backgroundColor": "#1E4B2C" },
   "plugins": {
     "CapacitorHttp": { "enabled": true },
     "CapacitorUpdater": { "autoUpdate": false, "statsUrl": "", "resetWhenUpdate": true, "appReadyTimeout": 15000, "autoDeleteFailed": true, "autoDeletePrevious": true },
