@@ -75,6 +75,7 @@ h3{font-size:16px;margin:0 0 6px}
 .stalk .m{font-size:11px;margin-top:4px;opacity:.8}
 .stalk.cur .m{opacity:1;font-weight:600;color:var(--grain-soft)}
 .stalk.cur .b{outline:2px solid var(--grain-soft);outline-offset:2px}
+.updbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#2F6B50;color:#F2F6EF;font-size:14px;max-width:520px;margin:0 auto}
 .pilula{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin:0 0 10px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer;text-align:left}
 .heroGrid{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:8px}
 .heroGrid .hp{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
@@ -601,22 +602,37 @@ async function ativaBio(el){if(!el.checked){C.seguranca.bio=false;salvaConta();r
 // ---------- atualização automática (e aviso quando precisa de APK novo) ----------
 const URL_ATUALIZA='https://github.com/jhoonoliveira/harvest-invest/releases/latest/download/atualizacao.json';
 const NATIVO_APP=(window.HVVER&&Number(HVVER.nativo))||0;
-let _updRodando=false;
-async function verificaAtualizacao(manual){if(!NATIVO||!HVN.Updater||_updRodando)return;
-  if(!manual&&Date.now()-(+localStorage.getItem('hv_upd_chk')||0)<3*3600e3)return;
+let _updRodando=false,_updDepois=false;
+// procura sempre a versão mais nova (cada pacote é completo: pula as intermediárias sem problema)
+async function verificaAtualizacao(manual,abertura){if(!NATIVO||!HVN.Updater||_updRodando)return;
+  if(!manual&&!abertura&&Date.now()-(+localStorage.getItem('hv_upd_chk')||0)<60e3)return;
   if(!navigator.onLine){if(manual)toast('Sem internet agora');return;}
   _updRodando=true;localStorage.setItem('hv_upd_chk',Date.now());
   try{const r=await fetch(URL_ATUALIZA+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('http '+r.status);const u=await r.json();
     console.log('HV_UPD remoto='+u.versao+' nativo='+u.nativo+' | local='+VERSAO_APP+' nativo='+NATIVO_APP);
     if(Number(u.nativo)>NATIVO_APP){avisoApk(u,manual);return;}
     if(cmpVer(u.versao,VERSAO_APP)<=0){if(manual)toast('✓ Você já está na versão mais recente ('+VERSAO_APP+')');return;}
-    if(manual)toast('Baixando a versão '+u.versao+'…');
-    const b=await HVN.Updater.download({url:u.zip,version:u.versao,checksum:u.sha256});
-    if(manual){toast('Atualizando…');setTimeout(()=>HVN.Updater.set({id:b.id}),700);return;}
-    await HVN.Updater.next({id:b.id});localStorage.setItem('hv_upd_pronta',u.versao);localStorage.setItem('hv_upd_id',b.id);
-    toast('✓ Atualização '+u.versao+' baixada — entra na próxima vez que abrir o app');}
+    let id=localStorage.getItem('hv_upd_pronta')===u.versao?localStorage.getItem('hv_upd_id'):null;
+    if(id){try{const l=await HVN.Updater.list();if(!(l.bundles||[]).some(b=>b.id===id))id=null;}catch(e){}}
+    if(!id){if(manual)toast('Baixando a versão '+u.versao+'…');
+      const b=await HVN.Updater.download({url:u.zip,version:u.versao,checksum:u.sha256});id=b.id;
+      localStorage.setItem('hv_upd_pronta',u.versao);localStorage.setItem('hv_upd_id',id);}
+    localStorage.setItem('hv_upd_notas',JSON.stringify(u.historico||[]));
+    if(manual)return aplicaAtualizacao();
+    if(!_updDepois)bannerAtualizacao();}
   catch(e){console.log('HV_UPD_ERRO '+(e&&e.message||e));if(manual)toast('Não consegui verificar agora. Tente mais tarde.');}
   finally{_updRodando=false;}}
+function notasNovas(){let h=[];try{h=JSON.parse(localStorage.getItem('hv_upd_notas')||'[]');}catch(e){}
+  return h.filter(x=>x&&x.nota&&cmpVer(x.versao,VERSAO_APP)>0);}
+function bannerAtualizacao(){const v=localStorage.getItem('hv_upd_pronta');if(!v||cmpVer(v,VERSAO_APP)<=0)return;
+  let b=document.getElementById('updBar');if(!b){b=document.createElement('div');b.id='updBar';b.className='updbar';const h=document.querySelector('header.top');h.parentNode.insertBefore(b,h.nextSibling);}
+  const n=notasNovas();
+  b.innerHTML=`<span style="flex:1">⬆️ Nova versão <b>${esc(v)}</b> pronta${n.length?` <a href="#" onclick="verNovidades();return false" style="color:inherit;text-decoration:underline">o que mudou</a>`:''}</span>
+   <button class="btn gold" style="padding:6px 12px" onclick="aplicaAtualizacao()">Atualizar</button><button class="btn ghost" style="padding:6px 8px;color:inherit" onclick="_updDepois=true;document.getElementById('updBar').remove()">Agora não</button>`;}
+function verNovidades(){const n=notasNovas();sheet(`<h3>O que mudou</h3>${n.length?`<ul style="padding-left:18px;line-height:1.5">${n.map(x=>`<li><b>${esc(x.versao)}</b> — ${esc(x.nota)}</li>`).join('')}</ul>`:'<p class="muted">Melhorias e correções.</p>'}
+  <button class="btn gold full" style="margin-top:8px" onclick="fechaSheet();aplicaAtualizacao()">Atualizar agora</button>`);}
+async function aplicaAtualizacao(){const id=localStorage.getItem('hv_upd_id');if(!id){verificaAtualizacao(true);return;}
+  toast('Atualizando…');try{await HVN.Updater.set({id});}catch(e){localStorage.removeItem('hv_upd_id');localStorage.removeItem('hv_upd_pronta');toast('Não consegui aplicar — vou baixar de novo');verificaAtualizacao(true);}}
 function avisoApk(u,manual){if(!manual&&Date.now()-(+localStorage.getItem('hv_apk_aviso')||0)<20*3600e3)return;localStorage.setItem('hv_apk_aviso',Date.now());
   sheet(`<h3>⬆️ Nova versão do app</h3><p>A versão <b>${esc(u.versao)}</b> traz mudanças que precisam de uma instalação rápida. Seus dados continuam no celular.</p>
   <ol class="small" style="line-height:1.6;padding-left:18px"><li>Toque em <b>Baixar nova versão</b> e espere o download terminar.</li><li>Abra o arquivo baixado e toque em <b>Instalar</b> (ou “Atualizar”).</li></ol>
@@ -626,10 +642,9 @@ function iniciaAtualizacao(){if(!NATIVO||!HVN.Updater)return;
   try{HVN.Updater.notifyAppReady();}catch(e){}
   const vista=localStorage.getItem('hv_ver_vista');if(vista&&vista!==VERSAO_APP&&cmpVer(VERSAO_APP,vista)>0)setTimeout(()=>toast('✅ App atualizado para a versão '+VERSAO_APP),1200);
   localStorage.setItem('hv_ver_vista',VERSAO_APP);
-  const pr=localStorage.getItem('hv_upd_pronta'),pid=localStorage.getItem('hv_upd_id');
+  const pr=localStorage.getItem('hv_upd_pronta');
   if(pr&&cmpVer(pr,VERSAO_APP)<=0){localStorage.removeItem('hv_upd_pronta');localStorage.removeItem('hv_upd_id');}
-  else if(pr&&pid&&!localStorage.getItem('hv_upd_tentou_'+pr)){localStorage.setItem('hv_upd_tentou_'+pr,'1');HVN.Updater.set({id:pid}).catch(()=>{});return;}
-  setTimeout(()=>verificaAtualizacao(false),5000);
+  setTimeout(()=>{bannerAtualizacao();verificaAtualizacao(false,true);},1500);
   HVN.App.addListener('resume',()=>verificaAtualizacao(false));}
 
 // ---------- integração com o Android ----------
@@ -1757,7 +1772,9 @@ function vConfig(){
   <div class="panel"><h3>Fontes de dados</h3>${fontes.map(f=>`<div class="row between small" style="padding:7px 0;border-top:1px solid var(--line);gap:10px"><div><b>${f[0]}</b><br><span class="muted">${f[1]}</span></div><div class="right muted">${esc(f[2])}</div></div>`).join('')}
   <p class="small muted">O app atualiza cotações e proventos sozinho ao abrir (no máximo a cada 6 horas). O que você lançou ou importou nunca é sobrescrito.</p>
   <button class="btn sec" id="btnAtualizarTudo">Atualizar agora</button></div>
-  <div class="panel"><h3>Sobre</h3><p class="small" style="margin:0">Harvest Invest · versão ${esc(VERSAO_APP)}</p><p class="small muted">As novas versões chegam sozinhas: o app baixa ao abrir e aplica na próxima vez.</p><button class="btn sec" id="btnVerAtual">Procurar atualização</button></div>
+  <div class="panel"><h3>⬆️ Atualizações</h3><div class="row between small"><span>Versão instalada</span><b>${esc(VERSAO_APP)}</b></div>
+  ${(()=>{const pr=localStorage.getItem('hv_upd_pronta');return pr&&cmpVer(pr,VERSAO_APP)>0?`<button class="btn gold full" style="margin-top:8px" onclick="aplicaAtualizacao()">⬆️ Atualizar para ${esc(pr)}</button>`:''})()}
+  <p class="small muted">Sempre que você abre o app ele procura a versão mais nova e baixa sozinho. Depois pergunta se quer atualizar na hora — se disser “Agora não”, pergunta de novo na próxima vez. Se saírem várias versões, ele vai direto para a última. Seus dados não são afetados.</p><button class="btn sec full" id="btnVerAtual">🔄 Procurar atualização agora</button></div>
   <div class="panel"><h3>Cotações</h3><p class="small muted" style="margin-top:0">As cotações vêm da brapi, de graça. Crie uma conta em brapi.dev, copie o token e cole aqui. O plano gratuito dá 15 mil consultas por mês, uma por ativo, o que sobra para atualizar a carteira várias vezes por dia.</p>
   <label class="f" for="brapiTk" style="margin-top:0">Token da brapi</label><input id="brapiTk" type="password" autocomplete="off" value="${esc(S.cfg.brapiToken||'')}" placeholder="cole o token aqui">
   <div class="row" style="margin-top:10px"><button class="btn sec" id="btnSalvarTk">Salvar token</button><button class="btn" id="btnCotCfg">Atualizar cotações</button></div>
