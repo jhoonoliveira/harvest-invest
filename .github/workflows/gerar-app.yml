@@ -48,12 +48,11 @@ jobs:
           cat www/versao.js
 
       - name: Pacote de atualização automática
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
           (cd www && zip -qr -9 ../bundle.zip .)
-          R="https://github.com/${GITHUB_REPOSITORY}/releases"
-          SHA=$(sha256sum bundle.zip | cut -d' ' -f1)
-          printf '{"versao":"%s","nativo":%s,"zip":"%s/download/v%s/bundle.zip","sha256":"%s","apk":"%s/latest/download/HarvestInvest.apk"}\n' "$VERSAO" "$NATIVO" "$R" "$VERSAO" "$SHA" "$R" > atualizacao.json
-          cat atualizacao.json
+          gh release download --repo "$GITHUB_REPOSITORY" -p atualizacao.json -O anterior.json 2>/dev/null || echo '{}' > anterior.json
+          SHA=$(sha256sum bundle.zip | cut -d' ' -f1) MSG="$(git log -1 --pretty=%s)" node scripts/atualizacao.cjs
 
       - name: Licenças do Android SDK
         run: |
