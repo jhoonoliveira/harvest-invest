@@ -898,6 +898,7 @@ function vCarteira(){
     const dy=c.cot?vpc/c.cot*100:0;
     return `<button class="item" data-ativo="${c.t}" data-busca="${esc((c.t+' '+c.nome).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''))}">${logo(c.t)}<div class="flex1"><div class="tk">${c.t}</div><div class="small"><b class="num">${qtd(Math.round(c.q*1000)/1000)}</b> cota${c.q===1?'':'s'} · PM R$ ${S.privado?'••':nf2.format(c.pm)}</div><div class="small ${cotAtual(cotacaoDe(c.t))?'muted':''}" style="${cotAtual(cotacaoDe(c.t))?'':'color:var(--warn)'}">${cotAtual(cotacaoDe(c.t))?'Cotação R$ '+nf2.format(c.cot)+chipDia(c.t):'sem cotação atual'} · DY ${pct(dy)} · YoC ${pct(yoc)}</div><div class="small muted ellip">${esc(c.nome)}</div></div>
     <div class="right">${(()=>{const r=c.valor-c.custo,pc=c.custo?r/c.custo*100:0,cor=r>=0?'var(--ok)':'var(--bad)';return `<div class="num"><b>${brl(c.valor)}</b></div><div class="small muted num">aplicado ${brl(c.custo)}</div><div class="small num" style="color:${cor}">${r>=0?'+':'−'}${brl(Math.abs(r))}</div><div class="small num" style="color:${cor}">${r>=0?'+':'−'}${pct(Math.abs(pc))}</div>`})()}</div></button>`}).join('')}</div>
+  ${(()=>{const vend=tickers().filter(t=>!C.some(c=>c.t===t)&&S.ops.some(o=>o.t===t));if(!vend.length)return'';on('#btnVendidos','click',()=>{sheet(`<h3>Ativos que você já teve</h3><p class="small muted" style="margin-top:0">Toque para ver o histórico completo de cada um.</p><div class="list">${vend.map(t=>`<button class="item" onclick="abrirAtivo('${t}')">${logo(t,'sm')}<div class="flex1"><div class="tk">${t}</div><div class="small muted ellip">${esc(ativo(t).nome)} · ${contaMovs(t)} movimentações</div></div><span class="muted">›</span></button>`).join('')}</div>`)});return `<button class="btn sec full" id="btnVendidos" style="margin-top:10px">Ver ativos que já vendi (${vend.length})</button>`})()}
   <p class="small muted">Peso por setor</p>
   <div class="panel">${setores(C,total)}</div>`;
 }
@@ -911,7 +912,8 @@ function abrirAtivo(t){
   setTimeout(()=>{const b=document.getElementById('btnCotManual');if(b)b.onclick=()=>{const v=parseBR(document.getElementById('cotManual').value);if(!v){toast('Digite a cotação.');return}S.cotacoes=S.cotacoes||{};S.cotacoes[t]={p:v,d:HOJE,fonte:'manual'};save();render();abrirAtivo(t);toast('Cotação de '+t+' salva.')}},0);
   const a=ativo(t);const p=pos(t,HOJE);const E=entradas().filter(e=>e.t===t).reverse();
   const ops=S.ops.filter(o=>o.t===t).sort((x,y)=>x.d<y.d?1:-1);
-  sheet(`<div class="row">${logo(t,'lg')}<div><h3 style="margin:0">${t}</h3><div class="muted small">${esc(a.nome)}</div></div></div>
+  sheet(`<div class="row">${logo(t,'lg')}<div class="flex1"><h3 style="margin:0">${t}</h3><div class="muted small">${esc(a.nome)}</div></div></div>
+  <button class="btn sec full" style="margin-top:10px" onclick="document.getElementById('histAtivo').scrollIntoView({behavior:'smooth'})">📜 Ver todas as movimentações de ${t} (${contaMovs(t)})</button>
   <div class="grid2" style="margin:10px 0">
     <div class="panel kpi"><div class="l">Quantidade</div><div class="v num">${qtd(p.q)}</div></div>
     <div class="panel kpi"><div class="l">Preço médio</div><div class="v num">${S.privado?'••':'R$ '+nf2.format(p.pm)}</div></div>
@@ -924,9 +926,11 @@ function abrirAtivo(t){
   <p class="small muted" style="margin:4px 2px 0">O ajuste vale a partir de hoje e aparece no histórico. Compras e vendas futuras continuam recalculando o preço médio a partir dele. Para desfazer, use Lançar › Lotes.</p>
   <h3 style="margin-top:14px">Proventos</h3>
   <div class="list">${E.slice(0,12).map(itemProv).join('')||'<div class="item muted">Sem proventos.</div>'}</div>
-  <h3 style="margin-top:14px">Histórico de movimentações</h3>
+  <div class="row between" id="histAtivo" style="margin-top:14px"><h3 style="margin:0">Histórico de movimentações</h3>
+    <button class="btn ghost" style="padding:4px 0" onclick="UI.histAsc=!UI.histAsc;const y=document.querySelector('.sheet').scrollTop;abrirAtivo('${t}');setTimeout(()=>{const sh=document.querySelector('.sheet');if(sh)sh.scrollTop=y},0)">${UI.histAsc?'Mais antigas primeiro ⇅':'Mais recentes primeiro ⇅'}</button></div>
   ${historicoAtivo(t)}`);
 }
+function contaMovs(t){return S.ops.filter(o=>o.t===t).length+eventosAplicados().filter(e=>e.t===t||e.para===t).length}
 function historicoAtivo(t){
   const ORIG={b3:'B3',nota:'Nota',manual:'Manual',saldo:'Saldo anterior'};
   const L=[];
@@ -954,7 +958,7 @@ function historicoAtivo(t){
     L.push(r);
   });
   (S.transf||[]).filter(x=>x.t===t&&x.sentido==='entrada').forEach(x=>L.push({d:x.d,ev:'Transferência para '+x.corretora.split(' ').slice(0,2).join(' '),q:0,val:qtd(x.q)+' cotas',c:0,orig:'B3'}));
-  L.sort((a,b)=>a.d<b.d?1:a.d>b.d?-1:0);
+  L.sort((a,b)=>(a.d<b.d?1:a.d>b.d?-1:0)*(UI.histAsc?-1:1));
   if(!L.length) return '<div class="panel muted small">Sem movimentações.</div>';
   const fq=v=>v?(v>0?'+':'−')+qtd(Math.abs(Math.round(v*1000)/1000)):'—';
   return `<div class="tbl-wrap"><table><tr><th>Data</th><th>Movimentação</th><th class="n">Qtd</th><th class="n">Preço / valor</th><th class="n">Custos</th><th class="n">Posição</th><th>Origem</th></tr>
